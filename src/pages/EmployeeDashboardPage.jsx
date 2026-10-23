@@ -545,7 +545,7 @@ function GlassCard({
             </h2>
 
             {subtitle && (
-              <p
+              {!isMobile && <p
                 style={{
                   margin: "4px 0 0",
                   fontSize: 11.5,
@@ -2860,7 +2860,7 @@ export default function EmployeeDashboardPage() {
               : 30,
           padding:
             isMobile
-              ? 18
+              ? 14
               : 25,
           color: "#fff",
           boxShadow:
@@ -2923,15 +2923,15 @@ export default function EmployeeDashboardPage() {
               style={{
                 width:
                   isMobile
-                    ? 60
+                    ? 46
                     : 70,
                 height:
                   isMobile
-                    ? 60
+                    ? 46
                     : 70,
                 borderRadius:
                   isMobile
-                    ? 18
+                    ? 14
                     : 21,
                 overflow: "hidden",
                 background:
@@ -2946,7 +2946,7 @@ export default function EmployeeDashboardPage() {
                 color: "#fff",
                 fontSize:
                   isMobile
-                    ? 20
+                    ? 16
                     : 23,
                 fontWeight: 900,
                 flexShrink: 0,
@@ -3002,7 +3002,7 @@ export default function EmployeeDashboardPage() {
                     "7px 0 5px",
                   fontSize:
                     isMobile
-                      ? 24
+                      ? 20
                       : 32,
                   lineHeight: 1.08,
                   fontWeight: 900,
@@ -3065,22 +3065,22 @@ export default function EmployeeDashboardPage() {
                 </span>
               </div>
 
-              <p
+              {!isMobile && <p
                 style={{
                   margin:
                     "10px 0 0",
                   maxWidth: 720,
                   fontSize:
                     isMobile
-                      ? 12
+                      ? 11
                       : 13,
-                  lineHeight: 1.55,
+                  lineHeight: isMobile ? 1.4 : 1.55,
                   color:
                     "rgba(255,255,255,0.82)",
                 }}
               >
                 {t.intro}
-              </p>
+              </p>}
             </div>
           </div>
 
@@ -3124,14 +3124,14 @@ export default function EmployeeDashboardPage() {
           </div>
         </div>
 
-        <div
+        {!isMobile && <div
           style={{
             position: "relative",
             marginTop: 15,
             borderRadius: 16,
             padding:
               isMobile
-                ? "11px 12px"
+                ? "8px 10px"
                 : "12px 14px",
             background:
               "rgba(255,255,255,0.09)",
@@ -3166,7 +3166,7 @@ export default function EmployeeDashboardPage() {
           >
             Update 1.9
           </div>
-        </div>
+        </div>}
       </section>
 
       <div
