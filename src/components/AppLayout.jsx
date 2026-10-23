@@ -1,3 +1,4 @@
+import "./aerohub-shell.css";
 // src/components/AppLayout.jsx
 import { subscribeToBrowserVisibility } from "../platform/appLifecycle.js";
 import { subscribeToNativePushNavigation } from "../platform/pushNavigation.js";
@@ -92,6 +93,35 @@ export default function AppLayout() {
   const [trainingNotices, setTrainingNotices] = useState(0);
   const [wchrFollowUps, setWchrFollowUps] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try { return window.localStorage.getItem("aerohub-sidebar-collapsed") === "true"; }
+    catch { return false; }
+  });
+  const [stationNow, setStationNow] = useState(() => new Date());
+  const [stationWeather, setStationWeather] = useState(null);
+  const [weatherError, setWeatherError] = useState(false);
+  useEffect(() => {
+    try { window.localStorage.setItem("aerohub-sidebar-collapsed", String(sidebarCollapsed)); }
+    catch { /* local preference is optional */ }
+  }, [sidebarCollapsed]);
+  useEffect(() => {
+    const timer = window.setInterval(() => setStationNow(new Date()), 60000);
+    return () => window.clearInterval(timer);
+  }, []);
+  useEffect(() => {
+    let active = true;
+    const loadWeather = async () => {
+      try {
+        const response = await fetch("https://api.open-meteo.com/v1/forecast?latitude=27.9755&longitude=-82.5332&current=temperature_2m,weather_code&temperature_unit=fahrenheit&timezone=America%2FNew_York", { cache: "no-store" });
+        if (!response.ok) throw new Error("Weather unavailable");
+        const data = await response.json();
+        if (active) { setStationWeather(data.current || null); setWeatherError(false); }
+      } catch { if (active) setWeatherError(true); }
+    };
+    loadWeather();
+    const timer = window.setInterval(loadWeather, 15 * 60 * 1000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, []);
   const [navSearch, setNavSearch] = useState("");
   const [whatsNewOpen, setWhatsNewOpen] = useState(false);
   const [whatsNewSaving, setWhatsNewSaving] = useState(false);
@@ -1575,330 +1605,55 @@ export default function AppLayout() {
   // ============================================================
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        background:
-          "linear-gradient(135deg, #eef6ff 0%, #f4faff 45%, #f8fcff 100%)",
-        fontFamily: "Poppins, Inter, system-ui, sans-serif",
-      }}
-    >
-      <header
-        style={{
-          position: "sticky",
-          top: 0,
-          zIndex: 50,
-          background: "rgba(255,255,255,0.92)",
-          backdropFilter: "blur(14px)",
-          borderBottom: "1px solid #e2e8f0",
-          boxShadow: "0 10px 28px rgba(15,23,42,0.08)",
-        }}
-      >
-        <div
-          style={{
-            padding: "12px 16px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 12,
-            flexWrap: "wrap",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 12,
-              minWidth: 0,
-            }}
-          >
-            <div
-              style={{
-                width: 46,
-                height: 46,
-                flex: "0 0 46px",
-                borderRadius: 15,
-                background: "#ffffff",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                overflow: "hidden",
-                boxShadow: "0 10px 24px rgba(23,105,170,0.16)",
-                border: "1px solid #dbeafe",
-              }}
-            >
-              <img
-                src="/icons/aerostation-icon.png"
-                alt={APP_NAME}
-                style={{
-                  width: "100%",
-                  height: "100%",
-                  objectFit: "contain",
-                  display: "block",
-                }}
-              />
-            </div>
-
-            <div
-              style={{
-                minWidth: 0,
-                paddingRight: 4,
-              }}
-            >
-              <div
-                style={{
-                  fontSize: 12,
-                  fontWeight: 900,
-                  color: "#1769aa",
-                  letterSpacing: "0.08em",
-                  textTransform: "uppercase",
-                  lineHeight: 1.2,
-                }}
-              >
-                {APP_NAME}
-              </div>
-
-              <div
-                style={{
-                  marginTop: 2,
-                  fontSize: 10,
-                  fontWeight: 700,
-                  color: "#94a3b8",
-                  lineHeight: 1.25,
-                }}
-              >
-                {APP_SUBTITLE}
-              </div>
-            </div>
-
-            <div
-              aria-hidden="true"
-              style={{
-                width: 1,
-                height: 40,
-                background: "#e2e8f0",
-                margin: "0 2px",
-              }}
-            />
-
-            <div
-              style={{
-                width: 42,
-                height: 42,
-                flex: "0 0 42px",
-                borderRadius: 14,
-                background:
-                  "linear-gradient(135deg, #0f4c81 0%, #1769aa 55%, #5aa9e6 100%)",
-                color: "#fff",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontWeight: 900,
-                overflow: "hidden",
-                boxShadow: "0 8px 18px rgba(23,105,170,0.18)",
-              }}
-            >
-              {profilePhotoURL ? (
-                <img
-                  src={profilePhotoURL}
-                  alt={visibleName}
-                  style={{
-                    width: "100%",
-                    height: "100%",
-                    objectFit: "cover",
-                  }}
-                />
-              ) : (
-                getInitials(visibleName)
-              )}
-            </div>
-
-            <div
-              style={{
-                minWidth: 0,
-              }}
-            >
-              <div
-                style={{
-                  fontSize: 14,
-                  fontWeight: 800,
-                  color: "#0f172a",
-                  lineHeight: 1.25,
-                }}
-              >
-                {visibleName}
-              </div>
-
-              <div
-                style={{
-                  marginTop: 2,
-                  fontSize: 12,
-                  fontWeight: 600,
-                  color: "#64748b",
-                  lineHeight: 1.25,
-                }}
-              >
-                {visiblePosition}
-              </div>
-            </div>
-          </div>
-
-          <div
-            style={{
-              display: "flex",
-              gap: 8,
-              flexWrap: "wrap",
-            }}
-          >
-            {isManagementUser && (
-              <OperationalAlertBell
-                value={operationalAlerts}
-                onClick={() => navigate("/dashboard")}
-              />
-            )}
-
-            {isManagementUser && (
-              <StatusPill
-                label="WCHR"
-                value={wchrFollowUps}
-                active={wchrFollowUps > 0}
-                onClick={() => navigate("/wchr")}
-                title={
-                  wchrFollowUps > 0
-                    ? `${wchrFollowUps} open WCHR Duty Follow-Up${
-                        wchrFollowUps === 1 ? "" : "s"
-                      }. Open WCHR Operations.`
-                    : "Open WCHR Operations"
-                }
-              />
-            )}
-
-            <StatusPill
-              label="Messages"
-              value={unreadMessages}
-              active={unreadMessages > 0}
-              onClick={() => navigate("/messages")}
-              title={
-                unreadMessages > 0
-                  ? `${unreadMessages} unread conversation${
-                      unreadMessages === 1 ? "" : "s"
-                    }. Open Messages.`
-                  : "Open Messages"
-              }
-            />
-
-            <StatusPill
-              label="Notifications"
-              value={unreadNotifications}
-              active={unreadNotifications > 0}
-              onClick={() => navigate("/notifications")}
-              title={
-                unreadNotifications > 0
-                  ? `${unreadNotifications} unread notification${
-                      unreadNotifications === 1 ? "" : "s"
-                    }. Open Notifications.`
-                  : "Open Notifications"
-              }
-            />
-
-            {isManagementUser && (
-              <StatusPill
-                label="Day Off"
-                value={pendingTimeOff}
-                active={pendingTimeOff > 0}
-                onClick={() => navigate("/timeoff-requests")}
-                title={
-                  pendingTimeOff > 0
-                    ? `${pendingTimeOff} pending Day Off request${
-                        pendingTimeOff === 1 ? "" : "s"
-                      }. Open Day Off Requests.`
-                    : "Open Day Off Requests"
-                }
-              />
-            )}
-
-            <button
-              type="button"
-              onClick={() => setMenuOpen((value) => !value)}
-              style={topButtonStyle}
-            >
-              {menuOpen ? "Close Menu" : "Menu"}
-            </button>
-
-            <button
-              type="button"
-              onClick={logout}
-              style={logoutButtonStyle}
-            >
-              Logout
-            </button>
-          </div>
+    <div className={`aerohub-shell ${sidebarCollapsed ? "aerohub-shell--collapsed" : ""}`}>
+      {menuOpen && <button className="aerohub-mobile-backdrop" aria-label="Close navigation" onClick={() => setMenuOpen(false)} />}
+      <aside className={`aerohub-sidebar ${menuOpen ? "aerohub-sidebar--open" : ""}`} aria-label="Main navigation">
+        <div className="aerohub-sidebar-brand">
+          <img src="/icons/aerostation-icon.png" alt="" />
+          {(!sidebarCollapsed || menuOpen) && <div><strong>{APP_NAME}</strong><small>{APP_SUBTITLE}</small></div>}
+          <button type="button" className="aerohub-sidebar-collapse" onClick={() => setSidebarCollapsed(v => !v)} aria-label={sidebarCollapsed ? "Expand navigation" : "Collapse navigation"} title={sidebarCollapsed ? "Expand menu" : "Collapse menu"}>{sidebarCollapsed ? "»" : "«"}</button>
+          <button type="button" className="aerohub-sidebar-close" onClick={() => setMenuOpen(false)} aria-label="Close menu">×</button>
         </div>
-
-        {menuOpen && (
-          <div
-            style={{
-              padding: "0 16px 16px",
-              display: "grid",
-              gap: 12,
-              maxHeight: "72vh",
-              overflowY: "auto",
-            }}
-          >
-            <input
-              value={navSearch}
-              onChange={(e) => setNavSearch(e.target.value)}
-              placeholder="Search menu..."
-              style={searchInputStyle}
-            />
-
-            {filteredNavSections.map((section) => (
-              <div
-                key={section.title}
-                style={{
-                  background: "#ffffff",
-                  border: "1px solid #e2e8f0",
-                  borderRadius: 18,
-                  padding: 12,
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 900,
-                    color: "#64748b",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.12em",
-                    marginBottom: 10,
-                  }}
-                >
-                  {section.title}
-                </div>
-
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns:
-                      "repeat(auto-fit, minmax(220px, 1fr))",
-                    gap: 8,
-                  }}
-                >
-                  {section.items.map((item) => (
-                    <TopNavItem key={item.to} {...item} />
-                  ))}
-                </div>
-              </div>
-            ))}
-
-            {filteredNavSections.length === 0 && (
-              <div style={emptySearchStyle}>
-                No menu items found.
-              </div>
-            )}
+        {(!sidebarCollapsed || menuOpen) && <div className="aerohub-sidebar-search"><input value={navSearch} onChange={e => setNavSearch(e.target.value)} placeholder="Search pages..." aria-label="Search navigation" /></div>}
+        <nav className="aerohub-sidebar-nav">
+          {filteredNavSections.map(section => (
+            <section key={section.title} className="aerohub-nav-section">
+              {(!sidebarCollapsed || menuOpen) && <div className="aerohub-nav-heading">{section.title}</div>}
+              {section.items.map(item => (
+                <NavLink key={item.to} to={item.to} title={sidebarCollapsed ? item.label : undefined} onClick={() => setMenuOpen(false)} className={({isActive}) => `aerohub-nav-link ${isActive ? "aerohub-nav-link--active" : ""}`}>
+                  <span className="aerohub-nav-icon" aria-hidden="true">{item.icon}</span>
+                  {(!sidebarCollapsed || menuOpen) && <span className="aerohub-nav-label">{item.label}</span>}
+                  {(Number(item.badgeValue || 0) > 0 || item.showDot) && <span className="aerohub-nav-badge" aria-label="Pending">{Number(item.badgeValue || 0) > 0 ? (item.badgeValue > 99 ? "99+" : item.badgeValue) : "•"}</span>}
+                </NavLink>
+              ))}
+            </section>
+          ))}
+          {filteredNavSections.length === 0 && <div className="aerohub-nav-empty">No matching pages</div>}
+        </nav>
+        <div className="aerohub-sidebar-footer" title={visibleName}>
+          <span className="aerohub-sidebar-avatar">{profilePhotoURL ? <img src={profilePhotoURL} alt="" /> : getInitials(visibleName)}</span>
+          {(!sidebarCollapsed || menuOpen) && <div><strong>{visibleName}</strong><small>{visiblePosition}</small></div>}
+        </div>
+      </aside>
+      <div className="aerohub-workspace">
+        <header className="aerohub-topbar">
+          <div className="aerohub-topbar-left">
+            <button type="button" className="aerohub-mobile-menu" onClick={() => setMenuOpen(true)} aria-label="Open navigation">☰</button>
+            <div className="aerohub-station-heading"><strong>TPA <span>· Tampa International Airport</span></strong><small>Station Operations Center</small></div>
           </div>
-        )}
-      </header>
-
+          <div className="aerohub-station-meta">
+            <div className="aerohub-station-clock"><strong>{new Intl.DateTimeFormat("en-US", {timeZone:"America/New_York", hour:"numeric",minute:"2-digit"}).format(stationNow)}</strong><small>{new Intl.DateTimeFormat("en-US", {timeZone:"America/New_York",weekday:"short",month:"short",day:"numeric",year:"numeric"}).format(stationNow)} · ET</small></div>
+            <div className="aerohub-station-weather" title={weatherError ? "Live weather currently unavailable" : "Current conditions near TPA, not a flight delay advisory"}><span aria-hidden="true">{stationWeather ? ([0,1].includes(stationWeather.weather_code) ? "☀️" : [2,3].includes(stationWeather.weather_code) ? "☁️" : [95,96,99].includes(stationWeather.weather_code) ? "⛈️" : "🌦️") : "🌤️"}</span><div><strong>{stationWeather ? `${Math.round(stationWeather.temperature_2m)}°F` : "—"}</strong><small>{stationWeather ? "TPA weather" : "Weather unavailable"}</small></div></div>
+          </div>
+          <div className="aerohub-topbar-actions">
+            {isManagementUser && <OperationalAlertBell value={operationalAlerts} onClick={() => navigate("/dashboard")} />}
+            {isManagementUser && <StatusPill label="WCHR" value={wchrFollowUps} active={wchrFollowUps > 0} onClick={() => navigate("/wchr")} />}
+            <StatusPill label="Messages" value={unreadMessages} active={unreadMessages > 0} onClick={() => navigate("/messages")} />
+            <StatusPill label="Notifications" value={unreadNotifications} active={unreadNotifications > 0} onClick={() => navigate("/notifications")} />
+            {isManagementUser && <StatusPill label="Day Off" value={pendingTimeOff} active={pendingTimeOff > 0} onClick={() => navigate("/timeoff-requests")} />}
+            <button type="button" onClick={logout} className="aerohub-logout">Logout</button>
+          </div>
+        </header>
       {whatsNewOpen && (
         <div
           role="presentation"
@@ -1966,17 +1721,8 @@ export default function AppLayout() {
         </div>
       )}
 
-      <main
-        style={{
-          width: "100%",
-          maxWidth: 1600,
-          margin: "0 auto",
-          padding: "16px",
-          boxSizing: "border-box",
-        }}
-      >
-        <Outlet />
-      </main>
+        <main className="aerohub-main"><Outlet /></main>
+      </div>
     </div>
   );
 }
