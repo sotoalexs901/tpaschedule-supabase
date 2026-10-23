@@ -1,72 +1,104 @@
-/* AeroStation Hub - mobile navigation and header correction.
-   Imported after aerohub-shell.css in src/main.jsx. */
-@media (max-width: 760px) {
-  html, body, #root { width: 100%; max-width: 100%; margin: 0; }
-  body { background: #f3f6fb; }
+/* AeroStation Hub - consolidated mobile layout, October 2026.
+   Replace the previous aerohub-mobile-fix.css with this file.
+   Import LAST from src/main.jsx. */
+@media screen and (max-width: 760px) {
+  html, body, #root { width: 100% !important; max-width: 100% !important; min-width: 0 !important; margin: 0 !important; overflow-x: clip !important; }
+  *, *::before, *::after { box-sizing: border-box; }
   .aerohub-shell, .aerohub-shell--collapsed {
-    --sidebar-width: 0px; display: block; width: 100%; min-width: 0;
-    min-height: 100dvh; background: #f3f6fb;
+    --sidebar-width: 0px !important; display: block !important;
+    width: 100% !important; max-width: 100% !important; min-width: 0 !important;
+    min-height: 100dvh; overflow-x: clip !important; background: #f3f6fb;
   }
   .aerohub-workspace, .aerohub-shell--collapsed .aerohub-workspace {
-    width: 100% !important; max-width: 100%; min-width: 0; margin: 0 !important;
+    width: 100% !important; max-width: 100% !important; min-width: 0 !important;
+    margin: 0 !important; padding: 0 !important; overflow-x: clip !important;
   }
   .aerohub-topbar {
-    position: relative; top: 0; z-index: 10; display: grid;
-    grid-template-columns: minmax(0, 1fr); width: 100%;
-    min-height: 0; padding: 10px 12px; gap: 9px;
-    background: #fff; box-sizing: border-box;
+    position: relative !important; inset: auto !important; transform: none !important;
+    z-index: 20 !important; width: 100% !important; max-width: 100% !important;
+    min-width: 0 !important; min-height: 0 !important; height: auto !important;
+    display: flex !important; flex-direction: column !important;
+    align-items: stretch !important; justify-content: flex-start !important;
+    gap: 8px !important; padding: 12px 12px 8px !important;
+    margin: 0 !important; background: #fff !important; overflow: visible !important;
+    backdrop-filter: none !important;
   }
-  .aerohub-topbar-left { display: flex; align-items: center; gap: 10px; }
+  .aerohub-topbar-left {
+    display: flex !important; width: 100% !important; min-width: 0 !important;
+    align-items: center !important; gap: 9px !important;
+  }
   .aerohub-mobile-menu {
-    display: inline-flex !important; align-items: center; justify-content: center;
-    flex: 0 0 42px; height: 42px; border: 1px solid #d5e0eb;
-    background: #f8fafc; color: #124a80; border-radius: 10px;
-    cursor: pointer; touch-action: manipulation;
+    display: inline-flex !important; align-items: center !important; justify-content: center !important;
+    flex: 0 0 42px !important; width: 42px !important; height: 42px !important;
+    background: #f7faff !important; border: 1px solid #cfdeee !important;
+    color: #0c4b80 !important; border-radius: 10px !important;
+    font-size: 20px !important; cursor: pointer !important;
   }
-  .aerohub-station-heading { flex: 1; min-width: 0; }
-  .aerohub-station-heading strong { font-size: 14px; }
-  .aerohub-station-heading strong span { display: none; }
-  .aerohub-station-heading small { font-size: 11px; }
+  .aerohub-station-heading { flex: 1 1 auto !important; min-width: 0 !important; }
+  .aerohub-station-heading strong { font-size: 14px !important; }
+  .aerohub-station-heading strong span { display: none !important; }
+  .aerohub-station-heading small { font-size: 11px !important; }
   .aerohub-station-meta {
-    margin: 0; display: flex; flex-wrap: wrap; gap: 10px;
-    align-items: center; justify-content: space-between;
+    display: flex !important; width: 100% !important; min-width: 0 !important;
+    margin: 0 !important; padding: 0 0 3px 51px !important;
+    justify-content: space-between !important; gap: 8px !important;
+    flex-wrap: nowrap !important;
   }
-  .aerohub-station-clock strong, .aerohub-station-weather strong { font-size: 13px; }
-  .aerohub-station-clock small, .aerohub-station-weather small { font-size: 10px; }
+  .aerohub-station-clock, .aerohub-station-weather { min-width: 0 !important; }
+  .aerohub-station-clock strong, .aerohub-station-weather strong { font-size: 12px !important; }
+  .aerohub-station-clock small, .aerohub-station-weather small { font-size: 9px !important; }
+  .aerohub-station-weather { padding-left: 8px !important; }
+  .aerohub-station-weather > span { font-size: 18px !important; }
   .aerohub-topbar-actions {
-    display: flex; width: 100%; min-width: 0; max-width: 100%;
-    overflow-x: auto; overflow-y: hidden; flex-wrap: nowrap; gap: 7px;
-    justify-content: flex-start; padding: 2px 0 5px;
-    -webkit-overflow-scrolling: touch;
+    display: flex !important; width: 100% !important; max-width: 100% !important;
+    min-width: 0 !important; flex-wrap: nowrap !important;
+    justify-content: flex-start !important; gap: 6px !important;
+    overflow-x: auto !important; overflow-y: hidden !important;
+    -webkit-overflow-scrolling: touch; padding: 2px 0 6px !important;
   }
-  .aerohub-topbar-actions > * { flex-shrink: 0; }
-  .aerohub-main { width: 100%; min-width: 0; margin: 0; padding: 10px; }
-
-  /* Mobile drawer must be above the header and every dashboard card. */
+  .aerohub-topbar-actions > * { flex: 0 0 auto !important; }
+  .aerohub-main { width: 100% !important; max-width: 100% !important; min-width: 0 !important; margin: 0 !important; padding: 10px !important; }
+  .aerohub-main > * { max-width: 100%; min-width: 0; }
   .aerohub-sidebar, .aerohub-shell--collapsed .aerohub-sidebar {
-    position: fixed !important; top: 0 !important; bottom: 0 !important;
-    left: 0 !important; right: auto !important;
-    width: min(310px, 86vw) !important; max-width: 86vw;
-    height: 100dvh; z-index: 10002 !important;
-    transform: translate3d(-110%, 0, 0) !important;
-    visibility: hidden; pointer-events: none;
-    transition: transform .22s ease, visibility .22s ease;
-    overflow: hidden; display: flex; flex-direction: column;
-    background: #10243e;
+    position: fixed !important; inset: 0 auto 0 0 !important;
+    top: 0 !important; bottom: 0 !important; left: 0 !important;
+    width: min(310px, 86vw) !important; max-width: 86vw !important;
+    height: 100dvh !important; z-index: 2147483000 !important;
+    display: flex !important; flex-direction: column !important;
+    transform: translate3d(-110%,0,0) !important;
+    visibility: hidden !important; pointer-events: none !important;
+    transition: transform .2s ease, visibility .2s ease !important;
+    background: #10243e !important;
   }
   .aerohub-sidebar.aerohub-sidebar--open,
   .aerohub-shell--collapsed .aerohub-sidebar.aerohub-sidebar--open {
-    transform: translate3d(0, 0, 0) !important;
+    transform: translate3d(0,0,0) !important;
     visibility: visible !important; pointer-events: auto !important;
   }
+  .aerohub-sidebar-nav { min-height: 0 !important; overflow-y: auto !important; }
+  .aerohub-sidebar-close { display: block !important; margin-left: auto !important; }
+  .aerohub-sidebar-collapse { display: none !important; }
+  .aerohub-shell--collapsed .aerohub-sidebar-brand { height: 72px !important; flex-wrap: nowrap !important; justify-content: flex-start !important; }
+  .aerohub-shell--collapsed .aerohub-nav-link { justify-content: flex-start !important; padding: 9px 11px !important; }
   .aerohub-mobile-backdrop {
     display: block !important; position: fixed !important; inset: 0 !important;
-    width: 100vw; height: 100dvh; border: 0;
-    background: rgba(8, 20, 36, .6); z-index: 10001 !important;
+    width: 100vw !important; height: 100dvh !important;
+    z-index: 2147482999 !important; border: 0 !important;
+    background: rgba(8,20,36,.65) !important;
   }
-  .aerohub-sidebar-close { display: block; margin-left: auto; }
-  .aerohub-sidebar-collapse { display: none; }
-  .aerohub-shell--collapsed .aerohub-sidebar-brand { justify-content: flex-start; }
-  .aerohub-shell--collapsed .aerohub-nav-link { justify-content: flex-start; }
-  .aerohub-sidebar-nav { min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  /* Independent navigation trigger: remains reachable if the topbar scrolls away. */
+  .aerohub-mobile-floating-menu {
+    position: fixed !important; display: flex !important; align-items: center !important;
+    justify-content: center !important; right: 16px !important;
+    bottom: calc(20px + env(safe-area-inset-bottom, 0px)) !important;
+    width: 54px !important; height: 54px !important;
+    z-index: 2147483001 !important; border: 1px solid #ffffff55 !important;
+    border-radius: 16px !important; background: #0e477a !important;
+    color: white !important; font-size: 23px !important;
+    box-shadow: 0 7px 25px #07182a66 !important;
+    cursor: pointer !important; touch-action: manipulation !important;
+  }
+}
+@media screen and (min-width: 761px) {
+  .aerohub-mobile-floating-menu { display: none !important; }
 }
