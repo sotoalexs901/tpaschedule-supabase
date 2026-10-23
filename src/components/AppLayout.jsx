@@ -1,4 +1,4 @@
-import "./aerohub-shell.css";
+import '../aerohub-shell.css';
 // src/components/AppLayout.jsx
 import { subscribeToBrowserVisibility } from "../platform/appLifecycle.js";
 import { subscribeToNativePushNavigation } from "../platform/pushNavigation.js";
