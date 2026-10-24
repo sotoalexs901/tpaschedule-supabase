@@ -15,6 +15,7 @@ import { useUser } from "../UserContext.jsx";
 import { APP_NAME } from "../config/appConfig.js";
 import OperationalAlertsPanel from "../components/OperationalAlertsPanel.jsx";
 import EventRsvpSummary from "../components/EventRsvpSummary.jsx";
+import LiveFlightsPanel from "../components/LiveFlightsPanel.jsx";
 
 const FIXED_AUTHOR = "AeroStation Hub";
 
@@ -1159,6 +1160,10 @@ export default function DashboardPage() {
             Refresh
           </button>
         </div>
+      </div>
+
+      <div style={{ marginBottom: isMobile ? 10 : 16 }}>
+        <LiveFlightsPanel compact={isMobile} maxItems={6} />
       </div>
 
       {canTrackTimesheets && (
