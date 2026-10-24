@@ -121,22 +121,111 @@ function movementTime(movement, field) {
   return parseIso(value.utc || value.local || null);
 }
 
+function movementLocalDate(movement, field = "scheduledTime") {
+  const value = movement?.[field];
+  if (!value) return "";
+  const local = typeof value === "string" ? value : value.local;
+  if (local && /^\d{4}-\d{2}-\d{2}/.test(local)) return local.slice(0, 10);
+  const utc = typeof value === "string" ? value : value.utc;
+  if (utc) {
+    const ms = new Date(utc).getTime();
+    if (!Number.isNaN(ms)) return new Date(ms).toISOString().slice(0, 10);
+  }
+  return "";
+}
+
+function normalizeFlightNumber(value) {
+  return upper(value).replace(/[^A-Z0-9]/g, "");
+}
+
+function candidateFlightNumbers(candidate) {
+  const values = new Set();
+  const add = (value) => {
+    const normalized = normalizeFlightNumber(value);
+    if (normalized) values.add(normalized);
+  };
+
+  add(candidate?.number);
+  add(candidate?.flightNumber);
+  add(candidate?.callSign);
+  add(candidate?.callsign);
+
+  const airlineIata = upper(candidate?.airline?.iata || candidate?.airline?.iataCode || candidate?.airline?.codeIata);
+  const airlineIcao = upper(candidate?.airline?.icao || candidate?.airline?.icaoCode || candidate?.airline?.codeIcao);
+  const numeric = clean(candidate?.flightNumberNumber || candidate?.numberOnly || candidate?.flightNumber?.number || candidate?.number?.number);
+  if (numeric) {
+    if (airlineIata) add(`${airlineIata}${numeric}`);
+    if (airlineIcao) add(`${airlineIcao}${numeric}`);
+  }
+
+  const codeshares = candidate?.codeshareStatus || candidate?.codeshares || candidate?.codeShares || [];
+  if (Array.isArray(codeshares)) {
+    codeshares.forEach((item) => {
+      if (typeof item === "string") add(item);
+      else {
+        add(item?.number);
+        add(item?.flightNumber);
+        const iata = upper(item?.airline?.iata || item?.airline?.iataCode);
+        const n = clean(item?.flightNumberNumber || item?.numberOnly || item?.flightNumber?.number || item?.number?.number);
+        if (iata && n) add(`${iata}${n}`);
+      }
+    });
+  }
+
+  return Array.from(values);
+}
+
 function scheduleRouteScore(candidate, watch) {
-  let score = 0;
-  const wanted = upper(watch.flightNumber).replace(/\s+/g, "");
-  const number = upper(candidate?.number).replace(/\s+/g, "");
-  if (number === wanted) score += 300;
+  const wanted = normalizeFlightNumber(watch.flightNumber);
+  const candidateNumbers = candidateFlightNumbers(candidate);
+  const exactNumber = candidateNumbers.includes(wanted);
+  if (!exactNumber) return -10000;
+
+  let score = 1000;
   const origin = movementAirportCode(candidate?.departure);
   const destination = movementAirportCode(candidate?.arrival);
-  if (upper(watch.origin) && origin === upper(watch.origin)) score += 100;
-  if (upper(watch.destination || "TPA") && destination === upper(watch.destination || "TPA")) score += 100;
+  const wantedOrigin = upper(watch.origin);
+  const wantedDestination = upper(watch.destination || "TPA");
+
+  if (wantedOrigin) score += origin === wantedOrigin ? 250 : -250;
+  if (wantedDestination) score += destination === wantedDestination ? 250 : -250;
+
+  const wantedDate = clean(watch.flightDate);
+  const departureDate = movementLocalDate(candidate?.departure, "scheduledTime");
+  const arrivalDate = movementLocalDate(candidate?.arrival, "scheduledTime");
+  if (wantedDate) {
+    if (departureDate === wantedDate) score += 500;
+    else if (arrivalDate === wantedDate) score += 150;
+    else score -= 700;
+  }
+
+  const std = movementTime(candidate?.departure, "scheduledTime");
+  if (std) score += 25;
   return score;
 }
 
+function scheduleCandidateDiagnostic(candidate, watch, score) {
+  if (!candidate) return null;
+  return {
+    requestedFlight: normalizeFlightNumber(watch.flightNumber),
+    candidateNumbers: candidateFlightNumbers(candidate),
+    requestedDate: clean(watch.flightDate),
+    departureDate: movementLocalDate(candidate?.departure, "scheduledTime"),
+    arrivalDate: movementLocalDate(candidate?.arrival, "scheduledTime"),
+    requestedOrigin: upper(watch.origin),
+    candidateOrigin: movementAirportCode(candidate?.departure),
+    requestedDestination: upper(watch.destination || "TPA"),
+    candidateDestination: movementAirportCode(candidate?.arrival),
+    score,
+  };
+}
+
 async function fetchAeroDataBoxSchedule(watch) {
-  const flightNumber = encodeURIComponent(upper(watch.flightNumber).replace(/\s+/g, ""));
+  const flightNumber = encodeURIComponent(normalizeFlightNumber(watch.flightNumber));
   const date = clean(watch.flightDate);
-  if (!flightNumber || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+  if (!flightNumber || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return { candidate: null, diagnostic: { reason: "invalid-flight-or-date" }, rows: 0 };
+  }
 
   const data = await aeroDataBoxGet(`/flights/number/${flightNumber}/${date}`, {
     withAircraftImage: false,
@@ -144,10 +233,36 @@ async function fetchAeroDataBoxSchedule(watch) {
     dateLocalRole: "Both",
   });
   const rows = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : [];
-  if (!rows.length) return null;
-  return rows
+  if (!rows.length) {
+    return { candidate: null, diagnostic: { reason: "no-rows-returned", requestedFlight: normalizeFlightNumber(watch.flightNumber), requestedDate: date }, rows: 0 };
+  }
+
+  const ranked = rows
     .map((candidate) => ({ candidate, score: scheduleRouteScore(candidate, watch) }))
-    .sort((a, b) => b.score - a.score)[0]?.candidate || null;
+    .sort((a, b) => b.score - a.score);
+
+  const best = ranked[0];
+  if (!best || best.score < 1000) {
+    return {
+      candidate: null,
+      diagnostic: {
+        reason: "no-exact-match",
+        returnedRows: rows.length,
+        topCandidate: best ? scheduleCandidateDiagnostic(best.candidate, watch, best.score) : null,
+      },
+      rows: rows.length,
+    };
+  }
+
+  return {
+    candidate: best.candidate,
+    diagnostic: {
+      reason: "matched",
+      returnedRows: rows.length,
+      selected: scheduleCandidateDiagnostic(best.candidate, watch, best.score),
+    },
+    rows: rows.length,
+  };
 }
 
 function normalizeAeroDataBoxSchedule(candidate, watch) {
@@ -577,7 +692,8 @@ async function syncWatch(db, docSnap) {
   // receive STD/STA without spending FR24 credits before their flight day.
   if (shouldSyncSchedule(watch)) {
     try {
-      const scheduleCandidate = await fetchAeroDataBoxSchedule(watch);
+      const scheduleResult = await fetchAeroDataBoxSchedule(watch);
+      const scheduleCandidate = scheduleResult?.candidate || null;
       const schedule = normalizeAeroDataBoxSchedule(scheduleCandidate, watch);
       if (Object.keys(schedule).length) {
         const previousStatus = upper(watch.status);
@@ -589,13 +705,17 @@ async function syncWatch(db, docSnap) {
           ...schedule,
           ...statusPatch,
           scheduleSyncError: "",
+          scheduleMatchDiagnostic: scheduleResult?.diagnostic || null,
+          scheduleReturnedRows: Number(scheduleResult?.rows || 0),
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         }, { merge: true });
         watch = { ...watch, ...schedule, ...statusPatch };
       } else {
         await docSnap.ref.set({
           scheduleSyncedAt: admin.firestore.FieldValue.serverTimestamp(),
-          scheduleSyncError: "No AeroDataBox schedule match found for this flight/date.",
+          scheduleSyncError: "No exact AeroDataBox schedule match found for this flight/date/route.",
+          scheduleMatchDiagnostic: scheduleResult?.diagnostic || null,
+          scheduleReturnedRows: Number(scheduleResult?.rows || 0),
         }, { merge: true });
       }
     } catch (error) {
