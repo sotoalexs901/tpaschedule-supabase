@@ -106,6 +106,7 @@ import BSODailyManagementPage from "./pages/BSODailyManagementPage.jsx";
 import PassengerFeedbackManagementPage from "./pages/PassengerFeedbackManagementPage.jsx";
 import FlightWatchManagementPage from "./pages/FlightWatchManagementPage.jsx";
 import SystemUpdatePage from "./pages/SystemUpdatePage.jsx";
+import SmartIntelligenceRulesPage from "./pages/SmartIntelligenceRulesPage.jsx";
 import SystemUpdateGate from "./components/SystemUpdateGate.jsx";
 
 
@@ -1095,6 +1096,15 @@ function AppRouter() {
           />
 
           {/* MANAGEMENT / ADMIN */}
+
+          <Route
+            path="admin/smart-intelligence-rules"
+            element={
+              <ProtectedRoute roles={["station_manager"]}>
+                <SmartIntelligenceRulesPage />
+              </ProtectedRoute>
+            }
+          />
 
           <Route
             path="admin/system-update"
