@@ -6,6 +6,7 @@ import { subscribeToNativePushNavigation } from "../platform/pushNavigation.js";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
 import { useUser } from "../UserContext.jsx";
+import GlobalWchrLiveLocationTracker from "./GlobalWchrLiveLocationTracker.jsx";
 import {
   collection,
   doc,
@@ -1618,6 +1619,7 @@ export default function AppLayout() {
 
   return (
     <div className={`aerohub-shell ${sidebarCollapsed ? "aerohub-shell--collapsed" : ""} ${menuOpen ? "aerohub-shell--menu-open" : ""}`}>
+      <GlobalWchrLiveLocationTracker />
       {menuOpen && <button className="aerohub-mobile-backdrop" aria-label="Close navigation" onClick={() => setMenuOpen(false)} />}
       <aside id="aerohub-primary-navigation" className={`aerohub-sidebar ${menuOpen ? "aerohub-sidebar--open" : ""}`} aria-label="Main navigation">
         <div className="aerohub-sidebar-brand">
