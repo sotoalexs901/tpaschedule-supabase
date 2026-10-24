@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { collection, onSnapshot } from "firebase/firestore";
+import { refreshSmartReportPackages } from "../services/smartIntelligenceReportMonitor.js";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 import {
@@ -53,8 +54,9 @@ export default function SmartIntelligenceTodayPage() {
       setRunning(true);
       setMessage("");
       const result = await ensureDailySmartAssignments({ actor: user });
+      await refreshSmartReportPackages({ actor: user });
       setSummary(result);
-      setMessage(`Smart Intelligence checked ${result.rulesCount} department rule${result.rulesCount === 1 ? "" : "s"}.`);
+      setMessage(`Smart Intelligence checked ${result.rulesCount} department rule${result.rulesCount === 1 ? "" : "s"} and refreshed today\'s report packages.`);
     } catch (error) {
       console.error("Smart Intelligence assignment engine failed:", error);
       setMessage(error?.message || "Could not run Smart Intelligence assignments.");
