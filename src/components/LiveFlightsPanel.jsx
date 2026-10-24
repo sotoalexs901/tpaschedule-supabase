@@ -100,40 +100,64 @@ function Metric({ label, value, emphasized = false }) {
 
 let leafletPromise;
 
-function ensureLeaflet() {
-  if (typeof window === "undefined") return Promise.reject(new Error("Map is only available in the browser."));
-  if (window.L) return Promise.resolve(window.L);
-  if (leafletPromise) return leafletPromise;
+function ensureLeafletCss() {
+  return new Promise((resolve, reject) => {
+    let css = document.querySelector('link[data-aerohub-leaflet="1"]');
 
-  leafletPromise = new Promise((resolve, reject) => {
-    if (!document.querySelector('link[data-aerohub-leaflet="1"]')) {
-      const css = document.createElement("link");
-      css.rel = "stylesheet";
-      css.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
-      css.integrity = "sha256-p4NxAoJBhIINfQ3yn5IphMKZPZgQyD7LV9l2z9gZ5xA=";
-      css.crossOrigin = "";
-      css.dataset.aerohubLeaflet = "1";
-      document.head.appendChild(css);
-    }
-
-    const existing = document.querySelector('script[data-aerohub-leaflet="1"]');
-    if (existing) {
-      existing.addEventListener("load", () => resolve(window.L), { once: true });
-      existing.addEventListener("error", () => reject(new Error("Unable to load map library.")), { once: true });
+    if (css) {
+      if (css.dataset.loaded === "1" || css.sheet) {
+        css.dataset.loaded = "1";
+        resolve();
+        return;
+      }
+      css.addEventListener("load", () => { css.dataset.loaded = "1"; resolve(); }, { once: true });
+      css.addEventListener("error", () => reject(new Error("Unable to load map styles.")), { once: true });
       return;
     }
 
-    const script = document.createElement("script");
+    css = document.createElement("link");
+    css.rel = "stylesheet";
+    css.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+    css.crossOrigin = "anonymous";
+    css.dataset.aerohubLeaflet = "1";
+    css.addEventListener("load", () => { css.dataset.loaded = "1"; resolve(); }, { once: true });
+    css.addEventListener("error", () => reject(new Error("Unable to load map styles.")), { once: true });
+    document.head.appendChild(css);
+  });
+}
+
+function ensureLeafletScript() {
+  return new Promise((resolve, reject) => {
+    if (window.L) {
+      resolve(window.L);
+      return;
+    }
+
+    let script = document.querySelector('script[data-aerohub-leaflet="1"]');
+    if (script) {
+      script.addEventListener("load", () => resolve(window.L), { once: true });
+      script.addEventListener("error", () => reject(new Error("Unable to load map library.")), { once: true });
+      return;
+    }
+
+    script = document.createElement("script");
     script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
-    script.integrity = "sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=";
-    script.crossOrigin = "";
+    script.crossOrigin = "anonymous";
     script.async = true;
     script.dataset.aerohubLeaflet = "1";
     script.onload = () => resolve(window.L);
     script.onerror = () => reject(new Error("Unable to load map library."));
     document.head.appendChild(script);
   });
+}
 
+function ensureLeaflet() {
+  if (typeof window === "undefined") {
+    return Promise.reject(new Error("Map is only available in the browser."));
+  }
+  if (leafletPromise) return leafletPromise;
+
+  leafletPromise = Promise.all([ensureLeafletCss(), ensureLeafletScript()]).then(([, L]) => L);
   return leafletPromise;
 }
 
@@ -233,7 +257,21 @@ function FlightMap({ points = [], currentLat, currentLon, heading, origin, desti
           map.fitBounds(L.latLngBounds(latLngs), { padding: [24, 24], maxZoom: 8 });
         }
 
-        window.setTimeout(() => map.invalidateSize(), 80);
+        const refreshMapSize = () => {
+          if (!mapInstance.current) return;
+          map.invalidateSize({ animate: false, pan: false });
+          if (latLngs.length === 1) {
+            map.setView(last, 7, { animate: false });
+          } else {
+            map.fitBounds(L.latLngBounds(latLngs), { padding: [24, 24], maxZoom: 8, animate: false });
+          }
+        };
+
+        window.requestAnimationFrame(() => {
+          refreshMapSize();
+          window.setTimeout(refreshMapSize, 180);
+          window.setTimeout(refreshMapSize, 500);
+        });
       })
       .catch((error) => {
         console.error("Live flight map failed:", error);
