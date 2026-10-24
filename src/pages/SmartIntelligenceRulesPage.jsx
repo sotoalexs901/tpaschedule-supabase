@@ -56,6 +56,9 @@ function normalizeRule(id, data = {}) {
       ? data.dedicatedDutyManagerIds.map(String)
       : [],
     requiredReports: Array.isArray(data.requiredReports) ? data.requiredReports.map(String) : [],
+    fallbackToStationManager: data.fallbackToStationManager === true,
+    fallbackStationManagerId: clean(data.fallbackStationManagerId),
+    fallbackStationManagerName: clean(data.fallbackStationManagerName),
     notes: clean(data.notes),
   };
 }
@@ -132,6 +135,9 @@ export default function SmartIntelligenceRulesPage() {
         reviewMode: "GENERAL_POOL",
         dedicatedDutyManagerIds: [],
         requiredReports: [],
+        fallbackToStationManager: false,
+        fallbackStationManagerId: "",
+        fallbackStationManagerName: "",
         notes: "",
         createdAt: serverTimestamp(),
         createdById: user?.id || "",
@@ -162,6 +168,9 @@ export default function SmartIntelligenceRulesPage() {
         reviewMode: draft.reviewMode === "DEDICATED" ? "DEDICATED" : "GENERAL_POOL",
         dedicatedDutyManagerIds: draft.reviewMode === "DEDICATED" ? draft.dedicatedDutyManagerIds : [],
         requiredReports: draft.requiredReports,
+        fallbackToStationManager: draft.fallbackToStationManager === true,
+        fallbackStationManagerId: draft.fallbackToStationManager ? (user?.id || "") : "",
+        fallbackStationManagerName: draft.fallbackToStationManager ? visibleName(user) : "",
         notes: clean(draft.notes),
         updatedAt: serverTimestamp(),
         updatedById: user?.id || "",
@@ -272,6 +281,30 @@ export default function SmartIntelligenceRulesPage() {
                   <button type="button" onClick={() => setDraft({ ...draft, reviewMode: "GENERAL_POOL", dedicatedDutyManagerIds: [] })} style={{ border: draft.reviewMode === "GENERAL_POOL" ? "2px solid #2563eb" : "1px solid #cbd5e1", background: draft.reviewMode === "GENERAL_POOL" ? "#eff6ff" : "#fff", borderRadius: 10, padding: "9px 12px", fontWeight: 800, cursor: "pointer" }}>General Duty Manager Pool</button>
                   <button type="button" onClick={() => setDraft({ ...draft, reviewMode: "DEDICATED" })} style={{ border: draft.reviewMode === "DEDICATED" ? "2px solid #2563eb" : "1px solid #cbd5e1", background: draft.reviewMode === "DEDICATED" ? "#eff6ff" : "#fff", borderRadius: 10, padding: "9px 12px", fontWeight: 800, cursor: "pointer" }}>Dedicated Duty Managers</button>
                 </div>
+              </div>
+
+              <div style={{ border: "1px solid #dbeafe", background: draft.fallbackToStationManager ? "#eff6ff" : "#f8fafc", borderRadius: 12, padding: 12 }}>
+                <label style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer" }}>
+                  <input
+                    type="checkbox"
+                    checked={draft.fallbackToStationManager === true}
+                    onChange={(e) =>
+                      setDraft({
+                        ...draft,
+                        fallbackToStationManager: e.target.checked,
+                        fallbackStationManagerId: e.target.checked ? (user?.id || "") : "",
+                        fallbackStationManagerName: e.target.checked ? visibleName(user) : "",
+                      })
+                    }
+                    style={{ marginTop: 3 }}
+                  />
+                  <span>
+                    <strong>Assign to me if no eligible Duty Manager is active</strong><br/>
+                    <span style={{ fontSize: 11.5, color: "#64748b" }}>
+                      Smart Intelligence will assign this department to {visibleName(user)} as Station Manager fallback instead of leaving it WAITING.
+                    </span>
+                  </span>
+                </label>
               </div>
 
               {draft.reviewMode === "DEDICATED" && (
