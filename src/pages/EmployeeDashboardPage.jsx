@@ -3176,7 +3176,7 @@ export default function EmployeeDashboardPage() {
       </div>
 
       <div style={{ marginBottom: isMobile ? 10 : 16 }}>
-        <AirportWeatherPanel compact={isMobile} maxItems={4} />
+        <AirportWeatherPanel compact={isMobile} maxItems={8} />
       </div>
 
       <div
