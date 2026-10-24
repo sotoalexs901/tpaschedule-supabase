@@ -257,6 +257,9 @@ function normalizeRule(id, data = {}) {
     requiredReports: Array.isArray(data.requiredReports)
       ? data.requiredReports.map(String).filter(Boolean)
       : [],
+    fallbackToStationManager: data.fallbackToStationManager === true,
+    fallbackStationManagerId: clean(data.fallbackStationManagerId),
+    fallbackStationManagerName: clean(data.fallbackStationManagerName),
     notes: clean(data.notes),
   };
 }
@@ -281,7 +284,8 @@ async function appendAudit({ dateKey, rule, assignment, actor }) {
     createdAt: serverTimestamp(),
     actorId: actor?.id || "",
     actorName: actor ? visibleName(actor) : "Smart Intelligence",
-    source: "smart_assignment_engine_v2",
+    source: assignment.assignmentSource || "smart_assignment_engine_v2",
+    stationManagerFallbackUsed: assignment.stationManagerFallbackUsed === true,
   });
 }
 
@@ -379,9 +383,21 @@ export async function ensureDailySmartAssignments({ actor } = {}) {
       ? activeDutyManagers.filter((user) => rule.dedicatedDutyManagerIds.includes(user.id))
       : generalPool;
 
-    const selected = pool.length
+    const selectedDutyManager = pool.length
       ? pool[stableHash(`${dateKey}|${rule.department}`) % pool.length]
       : null;
+
+    const fallbackStationManager =
+      !selectedDutyManager && rule.fallbackToStationManager
+        ? (
+            allUsers.find((candidate) => candidate.id === rule.fallbackStationManagerId && upper(candidate.role) === "STATION_MANAGER") ||
+            allUsers.find((candidate) => upper(candidate.role) === "STATION_MANAGER" && visibleName(candidate) === rule.fallbackStationManagerName) ||
+            null
+          )
+        : null;
+
+    const selected = selectedDutyManager || fallbackStationManager;
+    const isStationManagerFallback = Boolean(fallbackStationManager && !selectedDutyManager);
 
     const payload = {
       dateKey,
@@ -391,12 +407,19 @@ export async function ensureDailySmartAssignments({ actor } = {}) {
       requiredReports: rule.requiredReports,
       ruleNotes: rule.notes,
       dedicatedDutyManagerIds: rule.dedicatedDutyManagerIds,
+      fallbackToStationManager: rule.fallbackToStationManager,
+      fallbackStationManagerId: rule.fallbackStationManagerId,
+      fallbackStationManagerName: rule.fallbackStationManagerName,
       ...supervisorPatch,
       assignedDutyManagerId: selected?.id || "",
       assignedDutyManagerName: selected ? visibleName(selected) : "",
       assignedDutyManagerDepartment: selected?.department || "",
+      assignedReviewerRole: selected ? (isStationManagerFallback ? "station_manager" : "duty_manager") : "",
+      stationManagerFallbackUsed: isStationManagerFallback,
       status: selected ? "ASSIGNED" : "WAITING_FOR_DUTY_MANAGER",
-      assignmentSource: "smart_assignment_engine_v2",
+      assignmentSource: isStationManagerFallback
+        ? "station_manager_fallback"
+        : "smart_assignment_engine_v2",
       updatedAt: serverTimestamp(),
       ...(existingSnap.exists()
         ? {}
