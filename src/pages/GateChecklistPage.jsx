@@ -855,7 +855,7 @@ function buildPrintableGateChecklistHtml({
           <div class="grid">
             ${card("IN / Block In", form.blockIn)}
             ${card("ON / Wheels On", form.actualArrivalTime)}
-            ${card("OUT / Actual Departure", form.actualDepartureTime)}
+            ${card("OUT / Brake Release", form.actualDepartureTime)}
             ${card("AIRBORNE / OFF", form.airborneTime)}
             ${card("Brake Release", form.brakeReleaseTime)}
             ${card("Push Time", form.pushTime)}
@@ -1132,13 +1132,59 @@ export default function GateChecklistPage() {
 
         const std = toTampaClock(match.std || match.scheduledOut);
         const sta = toTampaClock(match.sta || match.scheduledIn);
-        const outboundActual = toTampaClock(match.actualOut);
         const outboundAirborne = toTampaClock(match.actualOff || match.atd);
-        const linkedInboundFlightNumber = normalizeFlightNumber(match.linkedInboundFlightNumber || "");
-        const inboundMatch = linkedInboundFlightNumber
-          ? rows.find((row) => normalizeFlightNumber(row.flightNumber) === linkedInboundFlightNumber)
+        const rawOutboundActual = toTampaClock(match.actualOut);
+        // OUT is brake release / blocks-out. Never reuse OFF/takeoff as OUT.
+        const outboundActual =
+          rawOutboundActual && outboundAirborne && rawOutboundActual === outboundAirborne
+            ? ""
+            : rawOutboundActual;
+        const manuallyLinkedInboundFlightNumber = normalizeFlightNumber(match.linkedInboundFlightNumber || "");
+
+        const sameAirline = (a, b) => {
+          const aPrefix = normalizeFlightNumber(a).match(/^[A-Z]+/)?.[0] || "";
+          const bPrefix = normalizeFlightNumber(b).match(/^[A-Z]+/)?.[0] || "";
+          return Boolean(aPrefix && bPrefix && aPrefix === bPrefix);
+        };
+
+        const outboundOrigin = String(match.origin || "").trim().toUpperCase();
+        const outboundDestination = String(match.destination || "").trim().toUpperCase();
+        const outboundStdIso = match.std || match.scheduledOut || null;
+        const outboundStdMs = outboundStdIso ? new Date(outboundStdIso).getTime() : Number.NaN;
+
+        const inboundCandidates = rows
+          .filter((row) => row.id !== match.id)
+          .filter((row) => sameAirline(row.flightNumber, match.flightNumber))
+          .filter((row) => String(row.destination || "").trim().toUpperCase() === outboundOrigin)
+          .map((row) => {
+            const inboundOrigin = String(row.origin || "").trim().toUpperCase();
+            const inboundInIso = row.actualIn || row.gateArrivedAt || row.sta || row.scheduledIn || null;
+            const inboundInMs = inboundInIso ? new Date(inboundInIso).getTime() : Number.NaN;
+            let score = 0;
+            if (outboundDestination && inboundOrigin === outboundDestination) score += 100;
+            if (row.actualIn || row.gateArrivedAt) score += 40;
+            if (Number.isFinite(outboundStdMs) && Number.isFinite(inboundInMs)) {
+              const diffMinutes = (outboundStdMs - inboundInMs) / 60000;
+              if (diffMinutes >= -30 && diffMinutes <= 360) score += 30;
+              if (diffMinutes >= 0 && diffMinutes <= 180) score += 25;
+              score -= Math.min(20, Math.abs(diffMinutes) / 30);
+            }
+            return { row, score, inboundInMs };
+          })
+          .sort((a, b) => b.score - a.score || (b.inboundInMs || 0) - (a.inboundInMs || 0));
+
+        const manualInboundMatch = manuallyLinkedInboundFlightNumber
+          ? rows.find((row) => normalizeFlightNumber(row.flightNumber) === manuallyLinkedInboundFlightNumber)
           : null;
+        const autoInboundMatch = !manualInboundMatch && inboundCandidates[0]?.score >= 80
+          ? inboundCandidates[0].row
+          : null;
+        const inboundMatch = manualInboundMatch || autoInboundMatch || null;
+        const linkedInboundFlightNumber = inboundMatch
+          ? normalizeFlightNumber(inboundMatch.flightNumber)
+          : manuallyLinkedInboundFlightNumber;
         const actualIn = toTampaClock(inboundMatch?.actualIn || inboundMatch?.gateArrivedAt);
+        const inboundLinkMode = manualInboundMatch ? "MANUAL" : (autoInboundMatch ? "AUTO" : "");
 
         setForm((prev) => ({
           ...prev,
@@ -1165,6 +1211,7 @@ export default function GateChecklistPage() {
           outboundActualSource: outboundActual ? (match.actualOutSource || "AeroDataBox gate time") : "",
           inboundFlightNumber: linkedInboundFlightNumber || "",
           inboundWatchId: inboundMatch?.id || "",
+          inboundLinkMode,
           lastSync: match.syncedAt || match.updatedAt || "",
         });
       },
@@ -2287,7 +2334,7 @@ export default function GateChecklistPage() {
                 fontSize: 11,
                 fontWeight: 700,
               }}>
-                ✈️ Aircraft Turn connected · Outbound STD/OUT from Flight Watch{flightWatchSync.inboundFlightNumber ? ` · Inbound ${flightWatchSync.inboundFlightNumber} IN feeds turnaround` : " · Link an inbound flight in Flight Watch to auto-fill IN"}
+                ✈️ Aircraft Turn connected · Outbound STD/OUT (Brake Release) from Flight Watch{flightWatchSync.inboundFlightNumber ? ` · Inbound ${flightWatchSync.inboundFlightNumber} IN feeds turnaround${flightWatchSync.inboundLinkMode === "AUTO" ? " · Auto-linked" : ""}` : " · No inbound match found yet"}
               </div>
             )}
 
@@ -2470,7 +2517,7 @@ export default function GateChecklistPage() {
               </div>
 
               <div>
-                <FieldLabel className="print-label">OUT / Actual Departure</FieldLabel>
+                <FieldLabel className="print-label">OUT / Brake Release</FieldLabel>
                 <TimeInput
                   value={form.actualDepartureTime}
                   disabled={!canEdit || !stdUnlocked}
