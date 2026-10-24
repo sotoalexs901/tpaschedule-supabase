@@ -5,6 +5,14 @@ const AERODATABOX_API_BASE = "https://prod.api.market/api/v1/aedbx/aerodatabox";
 const ACTIVE_STATUSES = new Set(["AIRBORNE", "APPROACHING"]);
 const TERMINAL_STATUSES = new Set(["ARRIVED", "COMPLETED", "CANCELLED", "DIVERTED"]);
 
+function isTpaInbound(watch) {
+  return upper(watch?.destination || "TPA") === "TPA" && upper(watch?.origin) !== "TPA";
+}
+
+function isTpaOutbound(watch) {
+  return upper(watch?.origin) === "TPA" && upper(watch?.destination) !== "TPA";
+}
+
 function clean(value) {
   return String(value ?? "").trim();
 }
@@ -304,6 +312,11 @@ function normalizeAeroDataBoxSchedule(candidate, watch) {
   const eta = movementTime(arrival, "revisedTime") || movementTime(arrival, "predictedTime");
   const providerStatus = upper(candidate.status);
   const providerArrived = providerStatus.includes("ARRIV") || providerStatus.includes("LAND");
+  const providerDeparted = providerStatus.includes("DEPART") || providerStatus.includes("AIRBORNE");
+  const departureRunwayTime = movementTime(departure, "runwayTime");
+  const departureGateTime = providerDeparted
+    ? (movementTime(departure, "actualTime") || movementTime(departure, "revisedTime"))
+    : null;
   const arrivalRunwayTime = movementTime(arrival, "runwayTime");
   // AeroDataBox renamed actualTime to revisedTime; actualTime is retained as a
   // compatibility fallback for marketplace/schema variations. For arrivals this
@@ -327,6 +340,15 @@ function normalizeAeroDataBoxSchedule(candidate, watch) {
     etd: etd || null,
     estimatedOut: etd || null,
     scheduleEta: eta || null,
+    ...(departureGateTime ? {
+      actualOut: departureGateTime,
+      actualOutSource: "AeroDataBox revised/actual gate time",
+    } : {}),
+    ...(departureRunwayTime ? {
+      actualOff: departureRunwayTime,
+      atd: departureRunwayTime,
+      actualOffSource: "AeroDataBox runwayTime",
+    } : {}),
     ...(arrivalRunwayTime ? {
       actualOn: arrivalRunwayTime,
       ata: arrivalRunwayTime,
@@ -354,14 +376,16 @@ function scheduleSyncDecision(watch) {
   const status = upper(watch.status);
   const hasActualIn = Boolean(watch.actualIn);
 
-  // A LANDED flight is not complete for station operations until we have a true
-  // gate/blocks-in time. Keep AeroDataBox alive after touchdown so Gate Checklist
-  // can receive separate ON (runway) and IN (gate) timestamps.
-  if (status !== "LANDED" && (watch.trackingComplete === true || TERMINAL_STATUSES.has(status))) {
+  // Station-turn policy: inbound flights are complete once IN/Block-In is known;
+  // outbound flights are complete once airborne/actual-off is known.
+  if (watch.trackingComplete === true || TERMINAL_STATUSES.has(status)) {
     return { due: false, reason: "terminal-or-complete", retryInMinutes: null };
   }
-  if (status === "LANDED" && hasActualIn) {
-    return { due: false, reason: "landed-with-actual-in", retryInMinutes: null };
+  if (isTpaInbound(watch) && status === "LANDED" && hasActualIn) {
+    return { due: false, reason: "inbound-has-actual-in", retryInMinutes: null };
+  }
+  if (isTpaOutbound(watch) && (status === "AIRBORNE" || watch.actualOff || watch.atd)) {
+    return { due: false, reason: "outbound-airborne-complete", retryInMinutes: null };
   }
 
   const date = clean(watch.flightDate);
@@ -549,15 +573,29 @@ function isFlightWatchWindowOpen(watch) {
   return tampa.hour >= 7;
 }
 
-function shouldPoll(watch) {
+function shouldPollByDateAndWindow(watch) {
   if (watch.trackingComplete === true) return false;
-  if (TERMINAL_STATUSES.has(upper(watch.status))) return false;
   if (!isFlightWatchWindowOpen(watch)) return false;
 
   const last = millis(watch.syncedAt);
   if (!last) return true;
   const interval = Number(watch.nextPollMinutes || nextPollMinutes(upper(watch.status)));
   return Date.now() - last >= Math.max(5, interval) * 60000 - 15000;
+}
+
+function shouldPoll(watch) {
+  const status = upper(watch.status);
+  if (watch.enabled === false) return false;
+  if (watch.trackingComplete === true) return false;
+  if (["CANCELLED", "DIVERTED", "COMPLETED"].includes(status)) return false;
+
+  // Inbound to TPA: monitor only until a real IN / Block-In is captured.
+  if (isTpaInbound(watch) && watch.actualIn) return false;
+
+  // Outbound from TPA: monitor only until AIRBORNE / actual-off is captured.
+  if (isTpaOutbound(watch) && (status === "AIRBORNE" || watch.actualOff || watch.atd)) return false;
+
+  return shouldPollByDateAndWindow(watch);
 }
 
 function eventEnabled(watch, key) {
@@ -743,8 +781,10 @@ function normalizeFlight(result, watch) {
   const flight = result?.data || {};
   const status = deriveStatus(result, watch);
   const eta = result?.kind === "live" ? parseIso(flight.eta) : null;
-  const atd = parseIso(flight.datetime_takeoff) || (result?.kind === "live" ? parseIso(flight.timestamp) : null);
+  const fr24Takeoff = parseIso(flight.datetime_takeoff);
+  const atd = fr24Takeoff || parseIso(watch.actualOff) || parseIso(watch.atd);
   const ata = parseIso(flight.datetime_landed);
+  const actualOut = parseIso(watch.actualOut);
   const actualOn = ata || parseIso(watch.actualOn);
   const actualIn = parseIso(watch.actualIn);
   const manualSta = parseIso(watch.sta || watch.scheduledArrival || watch.scheduledIn);
@@ -771,8 +811,10 @@ function normalizeFlight(result, watch) {
     estimatedIn: eta || null,
     scheduledOut: parseIso(watch.std || watch.scheduledDeparture || watch.scheduledOut) || null,
     estimatedOut: null,
-    actualOut: atd || null,
+    actualOut: actualOut || null,
     actualOff: atd || null,
+    actualOutSource: actualOut ? (watch.actualOutSource || "AeroDataBox gate time") : "",
+    actualOffSource: atd ? (fr24Takeoff ? "Flightradar24 datetime_takeoff" : (watch.actualOffSource || "AeroDataBox runwayTime")) : "",
     actualOn: actualOn || null,
     actualIn: actualIn || null,
     actualOnSource: actualOn ? (ata ? "Flightradar24 datetime_landed" : (watch.actualOnSource || "AeroDataBox runwayTime")) : "",
@@ -884,7 +926,9 @@ async function syncWatch(db, docSnap) {
     const next = normalizeFlight(flight, watch);
     const events = buildEvents(watch, next, watch);
     const approachingNotified = watch.approachingNotified || events.some((event) => event.type === "approaching");
-    const terminal = TERMINAL_STATUSES.has(upper(next.status));
+    const inboundComplete = isTpaInbound(watch) && Boolean(next.actualIn);
+    const outboundComplete = isTpaOutbound(watch) && (upper(next.status) === "AIRBORNE" || Boolean(next.actualOff || next.atd));
+    const terminal = ["CANCELLED", "DIVERTED", "COMPLETED"].includes(upper(next.status)) || inboundComplete || outboundComplete;
 
     await docSnap.ref.set({
       ...next,
