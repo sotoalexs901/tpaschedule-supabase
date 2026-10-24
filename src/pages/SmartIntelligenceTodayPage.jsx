@@ -5,6 +5,7 @@ import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 import {
   ensureDailySmartAssignments,
+  selectResponsibleSupervisor,
   SMART_ASSIGNMENTS_COLLECTION,
   tampaDateKey,
 } from "../services/smartIntelligenceAssignmentEngine.js";
@@ -48,6 +49,7 @@ export default function SmartIntelligenceTodayPage() {
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState("");
   const [summary, setSummary] = useState(null);
+  const [selectingSupervisorFor, setSelectingSupervisorFor] = useState("");
 
   const runEngine = async () => {
     try {
@@ -69,6 +71,25 @@ export default function SmartIntelligenceTodayPage() {
     runEngine();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
+
+  const handleSelectSupervisor = async (row, supervisor) => {
+    if (!row?.id || !supervisor?.userId) return;
+    try {
+      setSelectingSupervisorFor(row.id);
+      setMessage("");
+      await selectResponsibleSupervisor({
+        assignmentId: row.id,
+        supervisorUserId: supervisor.userId,
+        actor: user,
+      });
+      setMessage(`${supervisor.name} selected as responsible supervisor for ${row.department}.`);
+    } catch (error) {
+      console.error("Responsible supervisor selection failed:", error);
+      setMessage(error?.message || "Could not select responsible supervisor.");
+    } finally {
+      setSelectingSupervisorFor("");
+    }
+  };
 
   useEffect(() => {
     const unsub = onSnapshot(collection(db, SMART_ASSIGNMENTS_COLLECTION), (snap) => {
@@ -141,13 +162,49 @@ export default function SmartIntelligenceTodayPage() {
                   <div style={{ marginTop: 12, display: "grid", gap: 6, fontSize: 13 }}>
                     <div><strong>Duty Manager:</strong> {row.assignedDutyManagerName || "Waiting for an eligible Duty Manager to enter AeroStation"}</div>
                     <div>
-                      <strong>{Number(row.responsibleSupervisorCount || 0) > 1 ? "Supervisors on Duty:" : "Responsible Supervisor:"}</strong>{" "}
-                      {Array.isArray(row.responsibleSupervisorNames) && row.responsibleSupervisorNames.length
-                        ? row.responsibleSupervisorNames.join(", ")
-                        : row.responsibleSupervisorName || "Not identified from Approved Schedule yet"}
+                      <strong>Responsible Supervisor:</strong>{" "}
+                      {row.responsibleSupervisorName || "Select one of the Supervisors on Duty below"}
                     </div>
+                    {Array.isArray(row.responsibleSupervisors) && row.responsibleSupervisors.length > 0 && (
+                      <div style={{ display: "grid", gap: 7 }}>
+                        <div style={{ fontSize: 11.5, fontWeight: 900, color: "#64748b", textTransform: "uppercase", letterSpacing: ".04em" }}>
+                          Supervisors on Duty · tap to select
+                        </div>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
+                          {row.responsibleSupervisors.map((supervisor) => {
+                            const selected = clean(row.responsibleSupervisorUserId) === clean(supervisor.userId);
+                            const canSelect =
+                              user?.role === "station_manager" ||
+                              (user?.role === "duty_manager" && row.assignedDutyManagerId === user?.id);
+                            return (
+                              <button
+                                key={supervisor.userId || supervisor.employeeId || supervisor.name}
+                                type="button"
+                                disabled={!canSelect || selectingSupervisorFor === row.id}
+                                onClick={() => handleSelectSupervisor(row, supervisor)}
+                                style={{
+                                  border: selected ? "2px solid #16a34a" : "1px solid #cbd5e1",
+                                  background: selected ? "#dcfce7" : "#fff",
+                                  color: selected ? "#166534" : "#334155",
+                                  borderRadius: 999,
+                                  padding: "7px 10px",
+                                  fontSize: 12,
+                                  fontWeight: 850,
+                                  cursor: canSelect ? "pointer" : "default",
+                                  opacity: canSelect ? 1 : 0.75,
+                                }}
+                              >
+                                {selected ? "✓ " : ""}{supervisor.name}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                     <div style={{ fontSize: 11.5, color: "#64748b" }}>
-                      Source: {row.responsibleSupervisorSource === "approved_schedule_plus_users"
+                      Source: {row.responsibleSupervisorSource === "manual_selection_from_approved_schedule"
+                        ? `Selected from Approved Schedule${row.responsibleSupervisorSelectedByName ? ` by ${row.responsibleSupervisorSelectedByName}` : ""}`
+                        : row.responsibleSupervisorSource === "approved_schedule_plus_users"
                         ? "Approved Schedule + Manage Users"
                         : "Waiting for Approved Schedule / linked Supervisor user"}
                     </div>
@@ -175,7 +232,7 @@ export default function SmartIntelligenceTodayPage() {
       {user?.role === "station_manager" && (
         <Card>
           <div style={{ fontSize: 12, color: "#64748b", lineHeight: 1.55 }}>
-            Assignments are stored by date and department for future audit. Responsible supervisors are resolved from the Approved Schedule and validated against linked Manage Users roles. The next phase will compare received reports against each department's configured list.
+            Assignments are stored by date and department for future audit. Supervisors on Duty come from the Approved Schedule and are validated against linked Manage Users roles. The assigned Duty Manager can select which on-duty supervisor owns the report package, and that selection is audit logged.
           </div>
         </Card>
       )}
