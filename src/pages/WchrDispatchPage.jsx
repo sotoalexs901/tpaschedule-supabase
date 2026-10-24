@@ -20,6 +20,7 @@ import {
 
 import { db } from "../firebase";
 import LiveServiceBoard from "../components/LiveServiceBoard.jsx";
+import ArrivalReadinessPanel from "../components/ArrivalReadinessPanel.jsx";
 import UmnrOperationsPanel from "../components/UmnrOperationsPanel.jsx";
 import useActiveDispatchBoard from "../hooks/useActiveDispatchBoard.js";
 import { useUser } from "../UserContext.jsx";
@@ -6906,6 +6907,8 @@ export default function WchrDispatchPage() {
           </div>
         )}
       </PageCard>
+
+      <ArrivalReadinessPanel compact={isMobile} />
 
       {/* ====================================================== */}
       {/* INBOUND PASSENGER PREPARATION */}
