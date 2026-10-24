@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useUser } from "../UserContext.jsx";
 import {
   flightVisibleToUser,
@@ -98,66 +98,174 @@ function Metric({ label, value, emphasized = false }) {
   );
 }
 
-function TrackPreview({ points = [], currentLat, currentLon }) {
-  const usable = points
-    .map((point) => ({ lat: numberOrNull(point.lat), lon: numberOrNull(point.lon) }))
-    .filter((point) => point.lat !== null && point.lon !== null);
+let leafletPromise;
 
-  const current = {
-    lat: numberOrNull(currentLat),
-    lon: numberOrNull(currentLon),
-  };
-  if (current.lat !== null && current.lon !== null) usable.push(current);
+function ensureLeaflet() {
+  if (typeof window === "undefined") return Promise.reject(new Error("Map is only available in the browser."));
+  if (window.L) return Promise.resolve(window.L);
+  if (leafletPromise) return leafletPromise;
 
-  if (usable.length < 2) {
+  leafletPromise = new Promise((resolve, reject) => {
+    if (!document.querySelector('link[data-aerohub-leaflet="1"]')) {
+      const css = document.createElement("link");
+      css.rel = "stylesheet";
+      css.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+      css.integrity = "sha256-p4NxAoJBhIINfQ3yn5IphMKZPZgQyD7LV9l2z9gZ5xA=";
+      css.crossOrigin = "";
+      css.dataset.aerohubLeaflet = "1";
+      document.head.appendChild(css);
+    }
+
+    const existing = document.querySelector('script[data-aerohub-leaflet="1"]');
+    if (existing) {
+      existing.addEventListener("load", () => resolve(window.L), { once: true });
+      existing.addEventListener("error", () => reject(new Error("Unable to load map library.")), { once: true });
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+    script.integrity = "sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=";
+    script.crossOrigin = "";
+    script.async = true;
+    script.dataset.aerohubLeaflet = "1";
+    script.onload = () => resolve(window.L);
+    script.onerror = () => reject(new Error("Unable to load map library."));
+    document.head.appendChild(script);
+  });
+
+  return leafletPromise;
+}
+
+function FlightMap({ points = [], currentLat, currentLon, heading, origin, destination, status }) {
+  const mapEl = useRef(null);
+  const mapInstance = useRef(null);
+  const [mapError, setMapError] = useState("");
+
+  const usable = useMemo(() => {
+    const rows = points
+      .map((point) => ({ lat: numberOrNull(point.lat), lon: numberOrNull(point.lon) }))
+      .filter((point) => point.lat !== null && point.lon !== null);
+
+    const current = { lat: numberOrNull(currentLat), lon: numberOrNull(currentLon) };
+    if (current.lat !== null && current.lon !== null) {
+      const last = rows[rows.length - 1];
+      if (!last || Math.abs(last.lat - current.lat) > 0.0001 || Math.abs(last.lon - current.lon) > 0.0001) {
+        rows.push(current);
+      }
+    }
+    return rows;
+  }, [points, currentLat, currentLon]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!mapEl.current || usable.length < 1) return undefined;
+
+    ensureLeaflet()
+      .then((L) => {
+        if (cancelled || !mapEl.current) return;
+        setMapError("");
+
+        if (mapInstance.current) {
+          mapInstance.current.remove();
+          mapInstance.current = null;
+        }
+
+        const map = L.map(mapEl.current, {
+          zoomControl: true,
+          attributionControl: true,
+          scrollWheelZoom: false,
+        });
+        mapInstance.current = map;
+
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+          maxZoom: 18,
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        }).addTo(map);
+
+        const latLngs = usable.map((point) => [point.lat, point.lon]);
+        if (latLngs.length >= 2) {
+          L.polyline(latLngs, { color: "#1684c7", weight: 4, opacity: 0.9 }).addTo(map);
+        }
+
+        const first = latLngs[0];
+        const last = latLngs[latLngs.length - 1];
+
+        L.circleMarker(first, {
+          radius: 6,
+          weight: 3,
+          color: "#0f5d8f",
+          fillColor: "#ffffff",
+          fillOpacity: 1,
+        })
+          .addTo(map)
+          .bindTooltip(origin ? `Track start · ${origin}` : "Track start");
+
+        const normalizedStatus = clean(status).toUpperCase();
+        const rotation = Number.isFinite(Number(heading)) ? Number(heading) : 0;
+        const isLanded = ["LANDED", "ARRIVED", "COMPLETED"].includes(normalizedStatus);
+
+        if (isLanded) {
+          L.circleMarker(last, {
+            radius: 7,
+            weight: 3,
+            color: "#047857",
+            fillColor: "#d1fae5",
+            fillOpacity: 1,
+          })
+            .addTo(map)
+            .bindTooltip(destination ? `Landed · ${destination}` : "Landed");
+        } else {
+          const planeIcon = L.divIcon({
+            className: "aerohub-flight-plane-marker",
+            html: `<div style="width:34px;height:34px;border-radius:50%;background:#fff;border:3px solid #0f5d8f;box-shadow:0 5px 14px rgba(15,93,143,.28);display:flex;align-items:center;justify-content:center"><span style="display:block;font-size:18px;line-height:1;transform:rotate(${rotation}deg)">✈</span></div>`,
+            iconSize: [34, 34],
+            iconAnchor: [17, 17],
+          });
+          L.marker(last, { icon: planeIcon })
+            .addTo(map)
+            .bindTooltip(destination ? `En route to ${destination}` : "Current aircraft position");
+        }
+
+        if (latLngs.length === 1) {
+          map.setView(last, 7);
+        } else {
+          map.fitBounds(L.latLngBounds(latLngs), { padding: [24, 24], maxZoom: 8 });
+        }
+
+        window.setTimeout(() => map.invalidateSize(), 80);
+      })
+      .catch((error) => {
+        console.error("Live flight map failed:", error);
+        if (!cancelled) setMapError("Map is temporarily unavailable.");
+      });
+
+    return () => {
+      cancelled = true;
+      if (mapInstance.current) {
+        mapInstance.current.remove();
+        mapInstance.current = null;
+      }
+    };
+  }, [usable, heading, origin, destination, status]);
+
+  if (!usable.length) {
     return (
       <div style={{ padding: 16, textAlign: "center", color: "#64748b", fontSize: 12 }}>
-        Track is not available yet for this flight.
+        Live position is not available yet for this flight.
       </div>
     );
   }
 
-  const width = 640;
-  const height = 230;
-  const padding = 22;
-  const lats = usable.map((point) => point.lat);
-  const lons = usable.map((point) => point.lon);
-  const minLat = Math.min(...lats);
-  const maxLat = Math.max(...lats);
-  const minLon = Math.min(...lons);
-  const maxLon = Math.max(...lons);
-  const latSpan = Math.max(0.01, maxLat - minLat);
-  const lonSpan = Math.max(0.01, maxLon - minLon);
-
-  const project = (point) => ({
-    x: padding + ((point.lon - minLon) / lonSpan) * (width - padding * 2),
-    y: height - padding - ((point.lat - minLat) / latSpan) * (height - padding * 2),
-  });
-  const projected = usable.map(project);
-  const path = projected.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(" ");
-  const last = projected[projected.length - 1];
-
   return (
-    <div style={{ borderRadius: 16, overflow: "hidden", border: "1px solid #dbe5ef", background: "#eef6fb" }}>
-      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Flight track preview" style={{ display: "block", width: "100%", minHeight: 180 }}>
-        <defs>
-          <pattern id="flight-grid" width="40" height="40" patternUnits="userSpaceOnUse">
-            <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#dbe8f2" strokeWidth="1" />
-          </pattern>
-          <linearGradient id="flight-bg" x1="0" x2="1" y1="0" y2="1">
-            <stop offset="0%" stopColor="#f8fcff" />
-            <stop offset="100%" stopColor="#e8f4fb" />
-          </linearGradient>
-        </defs>
-        <rect width={width} height={height} fill="url(#flight-bg)" />
-        <rect width={width} height={height} fill="url(#flight-grid)" />
-        <path d={path} fill="none" stroke="#1684c7" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" opacity="0.9" />
-        <circle cx={projected[0].x} cy={projected[0].y} r="7" fill="#0f5d8f" />
-        <circle cx={last.x} cy={last.y} r="11" fill="#ffffff" stroke="#0f5d8f" strokeWidth="3" />
-        <text x={last.x} y={last.y + 5} textAnchor="middle" fontSize="14">✈</text>
-      </svg>
+    <div style={{ border: "1px solid #dbe5ef", borderRadius: 16, overflow: "hidden", background: "#eef6fb" }}>
+      {mapError ? (
+        <div style={{ padding: 16, textAlign: "center", color: "#9a3412", fontSize: 12 }}>{mapError}</div>
+      ) : (
+        <div ref={mapEl} style={{ width: "100%", height: 260, background: "#e8f1f7" }} aria-label="Live flight map" />
+      )}
       <div style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "8px 11px", fontSize: 10.5, color: "#64748b" }}>
-        <span>Track preview</span>
+        <span>Live map · {origin || "—"} → {destination || "—"}</span>
         <span>{usable.length} positions</span>
       </div>
     </div>
@@ -286,7 +394,15 @@ function FlightCard({ flight, compact }) {
           ) : trackError ? (
             <div style={{ padding: 12, borderRadius: 12, background: "#fff7ed", color: "#9a3412", fontSize: 11.5 }}>{trackError}</div>
           ) : (
-            <TrackPreview points={track} currentLat={flight.latitude} currentLon={flight.longitude} />
+            <FlightMap
+              points={track}
+              currentLat={flight.latitude}
+              currentLon={flight.longitude}
+              heading={flight.track}
+              origin={flight.origin}
+              destination={flight.destination}
+              status={flight.status}
+            />
           )}
 
           <div style={{ marginTop: 8, fontSize: 9.5, lineHeight: 1.45, color: "#94a3b8" }}>
