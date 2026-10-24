@@ -83,7 +83,6 @@ const TextInput = React.forwardRef(function TextInput(props, ref) {
         border: "1px solid #cbd5e1",
         borderRadius: 12,
         padding: "8px 10px",
-        minHeight: 40,
         fontSize: 13,
         color: "#0f172a",
         background: props.disabled ? "#f8fafc" : "#ffffff",
