@@ -1168,7 +1168,7 @@ export default function DashboardPage() {
       </div>
 
       <div style={{ marginBottom: isMobile ? 10 : 16 }}>
-        <AirportWeatherPanel compact={isMobile} maxItems={6} />
+        <AirportWeatherPanel compact={isMobile} maxItems={12} />
       </div>
 
       {canTrackTimesheets && (
