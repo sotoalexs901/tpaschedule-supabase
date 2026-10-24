@@ -1241,6 +1241,11 @@ export default function AppLayout() {
     if (user?.role === "station_manager") {
       admin.push(
         {
+          to: "/admin/smart-intelligence-rules",
+          label: "Smart Intelligence Rules",
+          icon: "🤖",
+        },
+        {
           to: "/admin/system-update",
           label: "System Update",
           icon: "🔄",
