@@ -2,7 +2,7 @@ import { rankAgentsForService, nearestOperationalLocation, gpsRankAgentsForServi
 import { subscribeOperationalLocations } from "../utils/operationalLocations.js";
 // src/pages/WchrDispatchPage.jsx
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   addDoc,
@@ -1201,6 +1201,64 @@ function getAgentInitials(agent) {
     .join("") || "AG";
 }
 
+
+const LEAFLET_CSS_URL = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+const LEAFLET_JS_URL = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+
+function useLeaflet() {
+  const [state, setState] = useState(() => ({
+    ready: typeof window !== "undefined" && Boolean(window.L),
+    error: "",
+  }));
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    if (window.L) {
+      setState({ ready: true, error: "" });
+      return undefined;
+    }
+
+    let cancelled = false;
+    let css = document.querySelector('link[data-aerostation-leaflet="true"]');
+    if (!css) {
+      css = document.createElement("link");
+      css.rel = "stylesheet";
+      css.href = LEAFLET_CSS_URL;
+      css.dataset.aerostationLeaflet = "true";
+      document.head.appendChild(css);
+    }
+
+    let script = document.querySelector('script[data-aerostation-leaflet="true"]');
+    const handleLoad = () => {
+      if (!cancelled) setState({ ready: Boolean(window.L), error: window.L ? "" : "Leaflet did not initialize." });
+    };
+    const handleError = () => {
+      if (!cancelled) setState({ ready: false, error: "Unable to load the interactive map library." });
+    };
+
+    if (!script) {
+      script = document.createElement("script");
+      script.src = LEAFLET_JS_URL;
+      script.async = true;
+      script.dataset.aerostationLeaflet = "true";
+      script.addEventListener("load", handleLoad);
+      script.addEventListener("error", handleError);
+      document.body.appendChild(script);
+    } else {
+      script.addEventListener("load", handleLoad);
+      script.addEventListener("error", handleError);
+      if (window.L) handleLoad();
+    }
+
+    return () => {
+      cancelled = true;
+      script?.removeEventListener("load", handleLoad);
+      script?.removeEventListener("error", handleError);
+    };
+  }, []);
+
+  return state;
+}
 function getGpsTimestamp(gps) {
   const rawTime = gps?.recorded_at;
   return rawTime?.toDate?.() || (rawTime?.seconds ? new Date(rawTime.seconds * 1000) : null);
@@ -1217,9 +1275,13 @@ function OperationalGpsMap({ agents = [], catalog = [], routes = [], now = Date.
   const [filter, setFilter] = useState("ALL");
   const [selectedId, setSelectedId] = useState("");
   const [selectedReferenceId, setSelectedReferenceId] = useState("");
+  const mapElementRef = useRef(null);
+  const mapInstanceRef = useRef(null);
+  const dataLayerRef = useRef(null);
+  const { ready: leafletReady, error: leafletError } = useLeaflet();
+
   const referencePoints = catalog.filter(p => p.active !== false && validGpsCoordinates(p.latitude, p.longitude));
   const recordedRoutes = routes.filter(route => route?.status === "completed" && Array.isArray(route?.points) && route.points.length > 1);
-  const routePoints = recordedRoutes.flatMap(route => route.points.filter(point => validGpsCoordinates(point?.latitude, point?.longitude)).map(point => ({ lat: Number(point.latitude), lng: Number(point.longitude) })));
 
   const normalizeLocationName = value => String(value || "").trim().toLowerCase();
   const findOperationalPoint = name => {
@@ -1263,21 +1325,6 @@ function OperationalGpsMap({ agents = [], catalog = [], routes = [], now = Date.
   const liveGpsMapped = records.filter(r => r.hasLiveGps);
   const operationalFallbackMapped = records.filter(r => r.hasOperationalFallback);
   const shown = mapped.filter(r => filter === "ALL" || r.availability === filter);
-  const points = [
-    ...referencePoints.map(p => ({ lat: Number(p.latitude), lng: Number(p.longitude) })),
-    ...routePoints,
-    ...mapped.map(r => ({ lat: r.mapLatitude, lng: r.mapLongitude })),
-  ];
-  const latMin = points.length ? Math.min(...points.map(p => p.lat)) : 0;
-  const latMax = points.length ? Math.max(...points.map(p => p.lat)) : 1;
-  const lngMin = points.length ? Math.min(...points.map(p => p.lng)) : 0;
-  const lngMax = points.length ? Math.max(...points.map(p => p.lng)) : 1;
-  const latPad = Math.max((latMax - latMin) * .12, .00018);
-  const lngPad = Math.max((lngMax - lngMin) * .12, .00018);
-  const project = (lat, lng) => ({
-    x: 32 + ((Number(lng) - (lngMin - lngPad)) / (lngMax - lngMin + 2 * lngPad)) * 736,
-    y: 28 + (1 - (Number(lat) - (latMin - latPad)) / (latMax - latMin + 2 * latPad)) * 364,
-  });
 
   const selectedReference = referencePoints.find(p => p.id === selectedReferenceId);
   const selected = records.find(r => r.agent.id === selectedId);
@@ -1297,6 +1344,129 @@ function OperationalGpsMap({ agents = [], catalog = [], routes = [], now = Date.
     return { ...r, distanceMeters: 6371000 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(Math.max(0, 1 - h))) };
   }).sort((a,b) => a.distanceMeters - b.distanceMeters) : [];
 
+  useEffect(() => {
+    if (!expanded || !leafletReady || !mapElementRef.current || !window.L) return undefined;
+    const L = window.L;
+
+    if (!mapInstanceRef.current) {
+      const map = L.map(mapElementRef.current, {
+        zoomControl: true,
+        attributionControl: true,
+        preferCanvas: true,
+      });
+
+      const satellite = L.tileLayer(
+        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        { maxZoom: 20, attribution: "Tiles © Esri" }
+      );
+      const street = L.tileLayer(
+        "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+        { maxZoom: 20, attribution: "© OpenStreetMap contributors" }
+      );
+
+      satellite.addTo(map);
+      L.control.layers({ Satellite: satellite, "Street Map": street }, null, { position: "topright" }).addTo(map);
+      mapInstanceRef.current = map;
+      dataLayerRef.current = L.layerGroup().addTo(map);
+    }
+
+    const map = mapInstanceRef.current;
+    const layer = dataLayerRef.current;
+    layer.clearLayers();
+    const bounds = [];
+
+    recordedRoutes.forEach(route => {
+      const coords = (route.points || [])
+        .filter(point => validGpsCoordinates(point?.latitude, point?.longitude))
+        .map(point => [Number(point.latitude), Number(point.longitude)]);
+      if (coords.length < 2) return;
+      L.polyline(coords, {
+        color: String(route.routeMode || "").toUpperCase() === "WCHR" ? "#0ea5e9" : "#8b5cf6",
+        weight: 4,
+        opacity: 0.65,
+      }).addTo(layer);
+      bounds.push(...coords);
+    });
+
+    referencePoints.forEach(point => {
+      const lat = Number(point.latitude);
+      const lng = Number(point.longitude);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+      const marker = L.circleMarker([lat, lng], {
+        radius: selectedReferenceId === point.id ? 9 : 6,
+        color: "#ffffff",
+        weight: 2,
+        fillColor: selectedReferenceId === point.id ? "#1d4ed8" : "#475569",
+        fillOpacity: 0.95,
+      }).addTo(layer);
+      marker.bindTooltip(cleanText(point.name) || "Operational Location", { direction: "top", offset: [0, -5] });
+      marker.on("click", () => {
+        setSelectedReferenceId(point.id);
+        setSelectedId("");
+      });
+      bounds.push([lat, lng]);
+    });
+
+    shown.forEach(record => {
+      const lat = Number(record.mapLatitude);
+      const lng = Number(record.mapLongitude);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+      const statusColor = record.availability === "AVAILABLE"
+        ? "#16a34a"
+        : record.availability === "BUSY"
+        ? "#ea580c"
+        : record.availability === "BREAK"
+        ? "#ca8a04"
+        : "#64748b";
+      const marker = L.circleMarker([lat, lng], {
+        radius: selectedId === record.agent.id ? 12 : 9,
+        color: "#ffffff",
+        weight: 3,
+        fillColor: statusColor,
+        fillOpacity: 1,
+      }).addTo(layer);
+      const sourceLabel = record.hasLiveGps ? "Live GPS" : "Operational Location";
+      marker.bindTooltip(`${getAgentName(record.agent)} · ${getAvailabilityLabel(record.availability)} · ${sourceLabel}`, {
+        direction: "top",
+        offset: [0, -7],
+      });
+      marker.on("click", () => {
+        setSelectedId(record.agent.id);
+        setSelectedReferenceId("");
+      });
+      bounds.push([lat, lng]);
+    });
+
+    if (bounds.length > 1) {
+      map.fitBounds(bounds, { padding: [28, 28], maxZoom: 17 });
+    } else if (bounds.length === 1) {
+      map.setView(bounds[0], 17);
+    } else {
+      map.setView([27.9755, -82.5332], 14);
+    }
+
+    const resizeTimer = window.setTimeout(() => map.invalidateSize(), 80);
+    return () => window.clearTimeout(resizeTimer);
+  }, [
+    expanded,
+    leafletReady,
+    filter,
+    selectedId,
+    selectedReferenceId,
+    now,
+    agents,
+    catalog,
+    routes,
+  ]);
+
+  useEffect(() => () => {
+    if (mapInstanceRef.current) {
+      mapInstanceRef.current.remove();
+      mapInstanceRef.current = null;
+      dataLayerRef.current = null;
+    }
+  }, []);
+
   return (
     <div style={{ marginBottom: 16, border: "1px solid #bfdbfe", borderRadius: 18, background: "linear-gradient(180deg,#f8fbff 0%,#eef6ff 100%)", padding: 14 }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
@@ -1306,9 +1476,19 @@ function OperationalGpsMap({ agents = [], catalog = [], routes = [], now = Date.
             {liveGpsMapped.length} Live GPS · {operationalFallbackMapped.length} Operational Location · {records.length - mapped.length} unavailable
           </div>
         </div>
-        <button type="button" onClick={() => setExpanded(v => !v)} style={{ border: "1px solid #93c5fd", borderRadius: 10, padding: "9px 12px", color: "#1d4ed8", background: "white", cursor: "pointer", fontWeight: 800 }}>
-          {expanded ? "Hide Map" : "View Map"}
-        </button>
+        <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+          <a
+            href="https://www.tampaairport.com/sites/default/files/2024-05/Gate-Map-0524.pdf"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ border: "1px solid #cbd5e1", borderRadius: 10, padding: "9px 12px", color: "#334155", background: "white", textDecoration: "none", fontWeight: 800, fontSize: 11 }}
+          >
+            TPA Official Gate Map
+          </a>
+          <button type="button" onClick={() => setExpanded(v => !v)} style={{ border: "1px solid #93c5fd", borderRadius: 10, padding: "9px 12px", color: "#1d4ed8", background: "white", cursor: "pointer", fontWeight: 800 }}>
+            {expanded ? "Hide Map" : "View Map"}
+          </button>
+        </div>
       </div>
 
       {expanded && <div style={{ marginTop: 13 }}>
@@ -1321,65 +1501,14 @@ function OperationalGpsMap({ agents = [], catalog = [], routes = [], now = Date.
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: selected || selectedReference ? "minmax(0,1.65fr) minmax(260px,.85fr)" : "1fr", gap: 12, alignItems: "stretch" }}>
-          <div style={{ overflowX: "auto", borderRadius: 14, border: "1px solid #cbd5e1", background: "#eaf4ff", boxShadow: "inset 0 0 40px rgba(15,76,129,.06)" }}>
-            {points.length > 0 ? (
-              <svg viewBox="0 0 800 420" role="img" aria-label="Interactive WCHR agent operational map" style={{ width: "100%", minWidth: 360, display: "block" }}>
-                <defs>
-                  <linearGradient id="terminalBg" x1="0" x2="1" y1="0" y2="1">
-                    <stop offset="0%" stopColor="#f8fbff" />
-                    <stop offset="100%" stopColor="#dceeff" />
-                  </linearGradient>
-                  <filter id="pinShadow" x="-50%" y="-50%" width="200%" height="200%">
-                    <feDropShadow dx="0" dy="2" stdDeviation="2" floodOpacity="0.24" />
-                  </filter>
-                  <clipPath id="avatarClip"><circle cx="0" cy="0" r="14" /></clipPath>
-                </defs>
-                <rect x="0" y="0" width="800" height="420" fill="url(#terminalBg)" />
-                <path d="M95 70 H705 Q735 70 735 100 V305 Q735 335 705 335 H95 Q65 335 65 305 V100 Q65 70 95 70 Z" fill="#ffffff" stroke="#c7dcef" strokeWidth="2" opacity="0.88" />
-                <path d="M185 130 H615 V275 H185 Z" fill="#f8fafc" stroke="#dbeafe" strokeWidth="2" strokeDasharray="8 6" />
-                <text x="400" y="205" textAnchor="middle" fontSize="27" fontWeight="900" fill="#d7e6f6">TPA OPERATIONAL MAP</text>
-                <text x="400" y="230" textAnchor="middle" fontSize="12" fontWeight="700" fill="#b7cce2">Tap an agent or location for details</text>
-
-                {recordedRoutes.map(route => {
-                  const coords = (route.points || []).filter(point => validGpsCoordinates(point?.latitude, point?.longitude)).map(point => project(point.latitude, point.longitude));
-                  if (coords.length < 2) return null;
-                  const poly = coords.map(point => `${point.x},${point.y}`).join(" ");
-                  return <polyline key={route.id} points={poly} fill="none" stroke={String(route.routeMode || "").toUpperCase() === "WCHR" ? "#0ea5e9" : "#8b5cf6"} strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" opacity="0.32" />;
-                })}
-
-                {referencePoints.map(p => {
-                  const xy = project(p.latitude, p.longitude);
-                  const isSelected = selectedReferenceId === p.id;
-                  return (
-                    <g key={p.id} onClick={() => { setSelectedReferenceId(p.id); setSelectedId(""); }} style={{ cursor: "pointer" }}>
-                      <circle cx={xy.x} cy={xy.y} r={isSelected ? 10 : 7} fill={isSelected ? "#1d4ed8" : "#64748b"} stroke="white" strokeWidth="3" filter="url(#pinShadow)" />
-                      <text x={xy.x + 11} y={xy.y - 9} fontSize="10.5" fontWeight="700" fill="#475569">{String(p.name || "Reference").slice(0,20)}</text>
-                    </g>
-                  );
-                })}
-
-                {shown.map(r => {
-                  const xy = project(r.mapLatitude, r.mapLongitude);
-                  const isSelected = selectedId === r.agent.id;
-                  const color = r.availability === "AVAILABLE" ? "#16a34a" : r.availability === "BUSY" ? "#ea580c" : r.availability === "BREAK" ? "#ca8a04" : "#64748b";
-                  const photo = getAgentPhotoUrl(r.agent);
-                  return (
-                    <g key={r.agent.id} onClick={() => { setSelectedId(r.agent.id); setSelectedReferenceId(""); }} style={{ cursor: "pointer" }} filter="url(#pinShadow)">
-                      <circle cx={xy.x} cy={xy.y} r={isSelected ? 20 : 17} fill="white" stroke={color} strokeWidth={isSelected ? 5 : 4} />
-                      {photo ? (
-                        <image href={photo} x={xy.x - 13} y={xy.y - 13} width="26" height="26" preserveAspectRatio="xMidYMid slice" clipPath="url(#avatarClip)" transform={`translate(${xy.x} ${xy.y})`} />
-                      ) : (
-                        <text x={xy.x} y={xy.y + 4} textAnchor="middle" fontSize="10" fontWeight="900" fill={color}>{getAgentInitials(r.agent)}</text>
-                      )}
-                      <circle cx={xy.x + 13} cy={xy.y + 12} r="5" fill={r.hasLiveGps ? "#2563eb" : "#64748b"} stroke="white" strokeWidth="2" />
-                      <text x={xy.x + 22} y={xy.y + 4} fontSize="11.5" fontWeight="800" fill="#0f172a">{getAgentName(r.agent).slice(0,20)}</text>
-                    </g>
-                  );
-                })}
-              </svg>
-            ) : (
-              <div style={{ padding: 24, color: "#64748b" }}>No registered operational points or current agent positions to plot.</div>
+          <div style={{ borderRadius: 14, border: "1px solid #cbd5e1", overflow: "hidden", background: "#dbeafe", minHeight: 430, position: "relative" }}>
+            {!leafletReady && !leafletError && (
+              <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", zIndex: 2, color: "#475569", fontWeight: 800, background: "#eff6ff" }}>Loading interactive TPA map...</div>
             )}
+            {leafletError && (
+              <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", zIndex: 2, color: "#991b1b", fontWeight: 800, background: "#fff7f7", padding: 20, textAlign: "center" }}>{leafletError}</div>
+            )}
+            <div ref={mapElementRef} style={{ width: "100%", height: 430 }} aria-label="Interactive TPA WCHR dispatch map" />
           </div>
 
           {selected && (
@@ -1433,7 +1562,7 @@ function OperationalGpsMap({ agents = [], catalog = [], routes = [], now = Date.
         </div>
 
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10, fontSize: 10.5, color: "#64748b" }}>
-          <span>🟢 Available</span><span>🟠 Busy</span><span>🔵 Live GPS</span><span>⚫ Operational Location</span><span>Tap any agent or location for details</span>
+          <span>🟢 Available</span><span>🟠 Busy</span><span>🔵 Live GPS</span><span>⚫ Operational Location</span><span>Satellite/Street layers</span><span>Tap any agent or location for details</span>
         </div>
       </div>}
     </div>
