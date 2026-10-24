@@ -1,4 +1,4 @@
- //src/pages/WchrAgentOperationsPage.jsx
+// src/pages/WchrAgentOperationsPage.jsx
 
 import UmnrOperationsPanel from "../components/UmnrOperationsPanel.jsx";
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -1293,6 +1293,8 @@ export default function WchrAgentOperationsPage() {
         last_gps_accuracy_m: accuracyMeters,
         last_operational_location_name: current.zoneName,
         route_learning_agent_page_active: true,
+        live_tracking_consent: true,
+        gps_capture_status: "GPS_ACTIVE",
         updated_at: serverTimestamp(),
       },
       { merge: true }
@@ -1342,6 +1344,8 @@ export default function WchrAgentOperationsPage() {
       learning_status: "RECORDING",
       source: "WCHR_LIVE_SERVICE",
       consent_source: "live_tracking_consent",
+      live_tracking_consent: shift?.live_tracking_consent === true,
+      gps_capture_status: shift?.live_tracking_consent === true ? "WAITING_FOR_GPS" : "NO_LIVE_TRACKING_CONSENT",
       route_learning_last_bootstrap_at: serverTimestamp(),
       updated_at: serverTimestamp(),
     };
@@ -1482,7 +1486,7 @@ export default function WchrAgentOperationsPage() {
   // the feature is deployed after a service has already started, the sample
   // is created/continued as soon as the active report is PICKED_UP/IN_TRANSIT.
   useEffect(() => {
-    if (!activeReport?.id || !agentId || !isPunchedIn || shift?.live_tracking_consent !== true) {
+    if (!activeReport?.id || !agentId || !isPunchedIn) {
       return;
     }
     const context = getRouteLearningContext(activeReport);
@@ -2233,17 +2237,15 @@ export default function WchrAgentOperationsPage() {
         user,
       });
 
-      if (shift?.live_tracking_consent === true) {
-        try {
-          await initializePassiveRouteSample({
-            report: { ...activeReport, wheelchair_number: selectedWheelchairNumber },
-            origin: "CBP",
-            destination: selectedIbDestination,
-            direction: "IB",
-          });
-        } catch (routeError) {
-          console.warn("Passive inbound route sample start failed:", routeError);
-        }
+      try {
+        await initializePassiveRouteSample({
+          report: { ...activeReport, wheelchair_number: selectedWheelchairNumber },
+          origin: "CBP",
+          destination: selectedIbDestination,
+          direction: "IB",
+        });
+      } catch (routeError) {
+        console.warn("Passive inbound route sample start failed:", routeError);
       }
 
       setSelectedLocation("CBP");
@@ -2956,23 +2958,21 @@ export default function WchrAgentOperationsPage() {
         location,
       });
 
-      if (shift?.live_tracking_consent === true) {
-        try {
-          const rawGate = cleanText(activeReport.gate_location || activeReport.gate);
-          const destination = rawGate
-            ? rawGate.toUpperCase().startsWith("GATE ")
-              ? rawGate
-              : `Gate ${rawGate}`
-            : "";
-          await initializePassiveRouteSample({
-            report: activeReport,
-            origin: location,
-            destination,
-            direction: "OB",
-          });
-        } catch (routeError) {
-          console.warn("Passive outbound route sample start failed:", routeError);
-        }
+      try {
+        const rawGate = cleanText(activeReport.gate_location || activeReport.gate);
+        const destination = rawGate
+          ? rawGate.toUpperCase().startsWith("GATE ")
+            ? rawGate
+            : `Gate ${rawGate}`
+          : "";
+        await initializePassiveRouteSample({
+          report: activeReport,
+          origin: location,
+          destination,
+          direction: "OB",
+        });
+      } catch (routeError) {
+        console.warn("Passive outbound route sample start failed:", routeError);
       }
 
       setLocationNote("");
