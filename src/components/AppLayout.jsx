@@ -31,6 +31,7 @@ import {
   setAeroStationAppBadge,
   clearAeroStationAppBadge,
 } from "../utils/appBadge.js";
+import { ensureDailySmartAssignments } from "../services/smartIntelligenceAssignmentEngine.js";
 
 const WHATS_NEW_RELEASE = "2.0.5";
 const WHATS_NEW_STORAGE_PREFIX = "aerostation-whats-new-seen:";
@@ -228,6 +229,17 @@ export default function AppLayout() {
   const logout = async () => {
     try {
       if (user?.id) {
+        if (user?.role === "duty_manager") {
+          try {
+            await updateDoc(doc(db, "users", user.id), {
+              smartDutyAvailable: false,
+              smartDutyStatus: "OFFLINE",
+              smartDutyLoggedOutAt: serverTimestamp(),
+            });
+          } catch (smartDutyError) {
+            console.warn("Could not clear Smart Intelligence Duty availability:", smartDutyError);
+          }
+        }
         await markUserOffline(user);
       }
     } catch (err) {
@@ -988,6 +1000,25 @@ export default function AppLayout() {
   }, [user, location.pathname]);
 
   // ============================================================
+  // SMART INTELLIGENCE DAILY ASSIGNMENTS
+  // ============================================================
+
+  useEffect(() => {
+    if (!user?.id) return;
+    if (user?.role !== "duty_manager" && user?.role !== "station_manager") return;
+
+    // Run after presence has had a moment to reach Firestore. The engine is
+    // idempotent and preserves any department already assigned for the day.
+    const timer = window.setTimeout(() => {
+      ensureDailySmartAssignments({ actor: user }).catch((error) =>
+        console.error("Smart Intelligence daily assignment check failed:", error)
+      );
+    }, 1500);
+
+    return () => window.clearTimeout(timer);
+  }, [user?.id, user?.role]);
+
+  // ============================================================
   // PERMISSIONS
   // ============================================================
 
@@ -1225,6 +1256,11 @@ export default function AppLayout() {
     // Dynamic airport reference points; agent Live Location remains separate.
     if (isManagementUser) {
       admin.push(
+        {
+          to: "/smart-intelligence",
+          label: "Smart Intelligence",
+          icon: "🤖",
+        },
         {
           to: "/flight-watch",
           label: "Flight Watch",
@@ -1662,7 +1698,7 @@ export default function AppLayout() {
       {isManagementUser && (
         <SmartIntelligenceFloatingAssistant
           alertCount={operationalAlerts}
-          onOpen={() => navigate("/dashboard")}
+          onOpen={() => navigate("/smart-intelligence")}
         />
       )}
       {menuOpen && <button className="aerohub-mobile-backdrop" aria-label="Close navigation" onClick={() => setMenuOpen(false)} />}
