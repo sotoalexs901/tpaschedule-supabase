@@ -2,6 +2,7 @@ const admin = require("firebase-admin");
 
 const FR24_API_BASE = "https://fr24api.flightradar24.com/api";
 const ACTIVE_STATUSES = new Set(["AIRBORNE", "APPROACHING"]);
+const TERMINAL_STATUSES = new Set(["LANDED", "ARRIVED", "COMPLETED", "CANCELLED"]);
 
 function clean(value) {
   return String(value ?? "").trim();
@@ -161,9 +162,12 @@ function deriveStatus(result, watch) {
   const flight = result.data || {};
   const wantedDestination = upper(watch.destination || "TPA");
   const actualDestination = airportCode(flight.dest_iata_actual || flight.destination_icao_actual);
+
+  // Landing is terminal even when the aircraft landed at an alternate airport.
+  // This prevents unnecessary FR24 polling after the flight is on the ground.
+  if (flight.datetime_landed) return "LANDED";
   if (actualDestination && wantedDestination && actualDestination !== wantedDestination) return "DIVERTED";
   if (result.kind === "live") return "AIRBORNE";
-  if (flight.datetime_landed) return "LANDED";
   if (flight.flight_ended === false) return "AIRBORNE";
   return "MONITORING";
 }
@@ -214,6 +218,8 @@ function isFlightWatchWindowOpen(watch) {
 }
 
 function shouldPoll(watch) {
+  if (watch.trackingComplete === true) return false;
+  if (TERMINAL_STATUSES.has(upper(watch.status))) return false;
   if (!isFlightWatchWindowOpen(watch)) return false;
 
   const last = millis(watch.syncedAt);
@@ -417,6 +423,10 @@ function normalizeFlight(result, watch) {
     origin: airportCode(flight.orig_iata || flight.orig_icao || flight.origin_icao) || upper(watch.origin),
     destination: airportCode(flight.dest_iata || flight.dest_icao || flight.destination_icao) || upper(watch.destination || "TPA"),
     actualDestination: airportCode(flight.dest_iata_actual || flight.destination_icao_actual) || "",
+    wasDiverted: Boolean(
+      airportCode(flight.dest_iata_actual || flight.destination_icao_actual) &&
+      airportCode(flight.dest_iata_actual || flight.destination_icao_actual) !== upper(watch.destination || "TPA")
+    ),
     sta: manualSta || null,
     eta: eta || null,
     std: parseIso(watch.std || watch.scheduledDeparture || watch.scheduledOut) || null,
@@ -468,9 +478,13 @@ async function syncWatch(db, docSnap) {
     const events = buildEvents(watch, next, watch);
     const approachingNotified = watch.approachingNotified || events.some((event) => event.type === "approaching");
 
+    const terminal = TERMINAL_STATUSES.has(upper(next.status));
+
     await docSnap.ref.set({
       ...next,
       approachingNotified,
+      trackingComplete: terminal,
+      ...(terminal ? { trackingCompletedAt: admin.firestore.FieldValue.serverTimestamp() } : {}),
       syncError: "",
       syncedAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
