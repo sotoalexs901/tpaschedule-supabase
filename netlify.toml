@@ -12,3 +12,7 @@
   schedule = "*/5 * * * *"
 [functions."airport-weather-sync-scheduled"]
   schedule = "*/15 * * * *"
+# Arrival Readiness: uses Flight Watch data already stored in Firebase.
+# It does NOT make additional Flightradar24 API calls.
+[functions."arrival-readiness-sync-scheduled"]
+  schedule = "*/5 * * * *"
