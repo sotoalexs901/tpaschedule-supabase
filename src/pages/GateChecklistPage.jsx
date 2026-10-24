@@ -4,6 +4,7 @@ import {
   collection,
   doc,
   getDocs,
+  onSnapshot,
   query,
   serverTimestamp,
   updateDoc,
@@ -256,6 +257,32 @@ function getVisibleUserName(user) {
     "User"
   );
 }
+
+function normalizeFlightNumber(value) {
+  return String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+function gateChecklistWantedFlight(airline, flight) {
+  const raw = normalizeFlightNumber(flight);
+  if (!raw) return "";
+  if (/^[A-Z]/.test(raw)) return raw;
+  return `${normalizeFlightNumber(airline)}${raw}`;
+}
+
+function toTampaClock(value) {
+  if (!value) return "";
+  const d = value?.toDate?.() || new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(d);
+  const map = Object.fromEntries(parts.filter((p) => p.type !== "literal").map((p) => [p.type, p.value]));
+  return `${map.hour}:${map.minute}`;
+}
+
 
 function toDateInputValue(value) {
   if (!value) return "";
@@ -817,6 +844,7 @@ function buildPrintableGateChecklistHtml({
             ${card("Expeditor", form.expeditor)}
             ${card("Supervisor", form.supervisor)}
             ${card("STD", form.std)}
+            ${card("STA", form.sta)}
             ${card("New STD", form.newStd)}
             ${card(form.airline === "SY" ? "D-10" : "D-15", form.boardingDeadline)}
           </div>
@@ -825,8 +853,8 @@ function buildPrintableGateChecklistHtml({
         <div class="section">
           <div class="section-title">Timing & Performance</div>
           <div class="grid">
-            ${card("Block In", form.blockIn)}
-            ${card("Actual Arrival", form.actualArrivalTime)}
+            ${card("IN / Block In", form.blockIn)}
+            ${card("ON / Wheels On", form.actualArrivalTime)}
             ${card("Actual Departure", form.actualDepartureTime)}
             ${card("Brake Release", form.brakeReleaseTime)}
             ${card("Push Time", form.pushTime)}
@@ -932,6 +960,7 @@ function createInitialForm(user) {
     controllable: "No",
     blockIn: "",
     std: "",
+    sta: "",
     newStd: "",
     boardingDeadline: "",
     actualDepartureTime: "",
@@ -965,6 +994,7 @@ function hasChecklistDependentData(form, specials, gateCheck, delayAnnouncements
     "delayCode",
     "delayTimeMinutes",
     "blockIn",
+    "sta",
     "newStd",
     "boardingDeadline",
     "actualDepartureTime",
@@ -1041,6 +1071,16 @@ export default function GateChecklistPage() {
   const [gateCheck, setGateCheck] = useState(createInitialGateCheck());
   const [delayAnnouncements, setDelayAnnouncements] = useState(["", "", "", ""]);
   const [actuals, setActuals] = useState({});
+  const [flightWatchSync, setFlightWatchSync] = useState({
+    id: "",
+    matched: false,
+    status: "",
+    stdSource: "",
+    staSource: "",
+    actualOnSource: "",
+    actualInSource: "",
+    lastSync: "",
+  });
 
   const checklistSections = useMemo(
     () => buildChecklistByAirline(form.airline),
@@ -1058,6 +1098,67 @@ export default function GateChecklistPage() {
   const canClose = isExisting;
   const canSubmit =
     !!form.airline && !!form.flight && !!form.date && !!form.std && canEdit;
+
+  useEffect(() => {
+    const date = String(form.date || "").trim();
+    const wantedFlight = gateChecklistWantedFlight(form.airline, form.flight);
+
+    if (!date || !wantedFlight) {
+      setFlightWatchSync((prev) => ({ ...prev, id: "", matched: false, status: "" }));
+      return undefined;
+    }
+
+    const watchQuery = query(
+      collection(db, "flight_watchlist"),
+      where("flightDate", "==", date)
+    );
+
+    return onSnapshot(
+      watchQuery,
+      (snap) => {
+        const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        const match = rows.find((row) => normalizeFlightNumber(row.flightNumber) === wantedFlight);
+
+        if (!match) {
+          setFlightWatchSync((prev) => ({ ...prev, id: "", matched: false, status: "NOT_FOUND" }));
+          return;
+        }
+
+        const std = toTampaClock(match.std || match.scheduledOut);
+        const sta = toTampaClock(match.sta || match.scheduledIn);
+        const actualOn = toTampaClock(match.actualOn || match.ata);
+        const actualIn = toTampaClock(match.actualIn || match.gateArrivedAt);
+
+        setForm((prev) => ({
+          ...prev,
+          ...(std ? { std } : {}),
+          ...(sta ? { sta } : {}),
+          ...(actualOn ? { actualArrivalTime: actualOn } : {}),
+          ...(actualIn ? { blockIn: actualIn } : {}),
+          ...(!prev.origin && match.origin ? { origin: match.origin } : {}),
+          ...(!prev.destination && match.destination ? { destination: match.destination } : {}),
+          ...(!prev.aircraft && (match.registration || match.aircraftType)
+            ? { aircraft: match.registration || match.aircraftType }
+            : {}),
+        }));
+
+        setFlightWatchSync({
+          id: match.id,
+          matched: true,
+          status: String(match.status || "MONITORING"),
+          stdSource: std ? (match.scheduleProvider || "Flight Watch") : "",
+          staSource: sta ? (match.scheduleProvider || "Flight Watch") : "",
+          actualOnSource: actualOn ? (match.actualOnSource || "Flightradar24") : "",
+          actualInSource: actualIn ? (match.actualInSource || "AeroDataBox") : "",
+          lastSync: match.syncedAt || match.updatedAt || "",
+        });
+      },
+      (error) => {
+        console.error("Gate Checklist Flight Watch sync failed:", error);
+        setFlightWatchSync((prev) => ({ ...prev, id: "", matched: false, status: "SYNC_ERROR" }));
+      }
+    );
+  }, [form.airline, form.date, form.flight]);
 
   useEffect(() => {
     const { newStd, boardingDeadline } = calculateNewStdAndDeadline(
@@ -1125,6 +1226,7 @@ export default function GateChecklistPage() {
       controllable: "No",
       blockIn: "",
       std: "",
+      sta: "",
       newStd: "",
       boardingDeadline: "",
       actualDepartureTime: "",
@@ -1157,6 +1259,7 @@ export default function GateChecklistPage() {
     setGateCheck(createInitialGateCheck());
     setDelayAnnouncements(["", "", "", ""]);
     setActuals({});
+    setFlightWatchSync({ id: "", matched: false, status: "", stdSource: "", staSource: "", actualOnSource: "", actualInSource: "", lastSync: "" });
     setStatusMessage("");
   }
 
@@ -1237,7 +1340,7 @@ export default function GateChecklistPage() {
       return;
     }
 
-    if (field !== "airline" && field !== "date" && field !== "std" && !stdUnlocked) {
+    if (!["airline", "date", "std", "flight"].includes(field) && !stdUnlocked) {
       return;
     }
 
@@ -1314,7 +1417,16 @@ export default function GateChecklistPage() {
 
       blockIn: form.blockIn || "",
       std: form.std || "",
+      sta: form.sta || "",
       newStd: form.newStd || "",
+      flightWatchId: flightWatchSync.id || "",
+      flightWatchAutoSync: flightWatchSync.matched === true,
+      flightWatchStatus: flightWatchSync.status || "",
+      stdSource: flightWatchSync.stdSource || "",
+      staSource: flightWatchSync.staSource || "",
+      actualOnSource: flightWatchSync.actualOnSource || "",
+      actualInSource: flightWatchSync.actualInSource || "",
+      autoSyncedAt: flightWatchSync.matched ? serverTimestamp() : null,
       boardingDeadline: form.boardingDeadline || "",
       actualDepartureTime: form.actualDepartureTime || "",
       actualArrivalTime: form.actualArrivalTime || "",
@@ -1550,6 +1662,7 @@ export default function GateChecklistPage() {
         controllable: data.controllable || "No",
         blockIn: data.blockIn || "",
         std: data.std || data.etd || "",
+        sta: data.sta || "",
         newStd: data.newStd || data.newEtd || "",
         boardingDeadline: data.boardingDeadline || "",
         actualDepartureTime: data.actualDepartureTime || "",
@@ -1595,6 +1708,16 @@ export default function GateChecklistPage() {
 
       const loadedActuals = data.actuals || {};
       setActuals(loadedActuals);
+      setFlightWatchSync({
+        id: data.flightWatchId || "",
+        matched: data.flightWatchAutoSync === true,
+        status: data.flightWatchStatus || "",
+        stdSource: data.stdSource || "",
+        staSource: data.staSource || "",
+        actualOnSource: data.actualOnSource || "",
+        actualInSource: data.actualInSource || "",
+        lastSync: data.autoSyncedAt || "",
+      });
 
       // Backward compatibility: if older reports saved duplicated checklist
       // answers only inside actuals, copy them into the main fields.
@@ -2038,6 +2161,17 @@ export default function GateChecklistPage() {
               </div>
 
               <div>
+                <FieldLabel className="print-label">Flight</FieldLabel>
+                <TextInput
+                  ref={flightRef}
+                  value={form.flight}
+                  disabled={!canEdit}
+                  onChange={(e) => updateField("flight", e.target.value.toUpperCase())}
+                  placeholder={`${form.airline || "AV"}194`}
+                />
+              </div>
+
+              <div>
                 <FieldLabel className="print-label">STD</FieldLabel>
                 <TimeInput
                   value={form.std}
@@ -2047,6 +2181,11 @@ export default function GateChecklistPage() {
                     border: stdUnlocked ? "1px solid #cbd5e1" : "2px solid #f59e0b",
                   }}
                 />
+              </div>
+
+              <div>
+                <FieldLabel className="print-label">STA</FieldLabel>
+                <TimeInput value={form.sta} disabled />
               </div>
 
               <div>
@@ -2089,11 +2228,25 @@ export default function GateChecklistPage() {
                     color: "#9a3412",
                   }}
                 >
-                  Enter Airline, Date and STD first. The rest of the checklist will unlock after STD is assigned.
+                  Enter Airline, Date and Flight first. AeroStation will pull STD/STA from Flight Watch when available; STD can still be entered manually as a fallback.
                   Repeated timing items (First/Last Pax Off, First/Last Pax On, Brake Release and Push)
                   are synchronized automatically across the form.
                 </div>
               </PageCard>
+            )}
+
+            {flightWatchSync.matched && (
+              <div className="no-print" style={{
+                padding: 11,
+                borderRadius: 12,
+                border: "1px solid #bbf7d0",
+                background: "#f0fdf4",
+                color: "#166534",
+                fontSize: 11,
+                fontWeight: 700,
+              }}>
+                ✈️ Flight Watch connected · STD/STA auto-sync · ON from {flightWatchSync.actualOnSource || "provider when available"} · IN from {flightWatchSync.actualInSource || "AeroDataBox gate time when available"}
+              </div>
             )}
 
             <div
@@ -2130,14 +2283,23 @@ export default function GateChecklistPage() {
                 gap: 8,
               }}
             >
-              <div>
-                <FieldLabel className="print-label">Flight</FieldLabel>
-                <TextInput
-                  ref={flightRef}
-                  value={form.flight}
-                  disabled={!canEdit || !stdUnlocked}
-                  onChange={(e) => updateField("flight", e.target.value)}
-                />
+              <div className="no-print">
+                <FieldLabel>Flight Watch Sync</FieldLabel>
+                <div style={{
+                  minHeight: 40,
+                  borderRadius: 12,
+                  border: `1px solid ${flightWatchSync.matched ? "#86efac" : "#cbd5e1"}`,
+                  background: flightWatchSync.matched ? "#f0fdf4" : "#f8fafc",
+                  padding: "9px 10px",
+                  fontSize: 11,
+                  fontWeight: 800,
+                  color: flightWatchSync.matched ? "#166534" : "#64748b",
+                  boxSizing: "border-box",
+                }}>
+                  {flightWatchSync.matched
+                    ? `CONNECTED · ${flightWatchSync.status || "MONITORING"}`
+                    : (form.date && form.flight ? "Waiting for Flight Watch match" : "Enter date + flight")}
+                </div>
               </div>
 
               <div>
@@ -2247,7 +2409,7 @@ export default function GateChecklistPage() {
               </div>
 
               <div>
-                <FieldLabel className="print-label">Block In</FieldLabel>
+                <FieldLabel className="print-label">IN / Block In</FieldLabel>
                 <TimeInput
                   value={form.blockIn}
                   disabled={!canEdit || !stdUnlocked}
@@ -2277,7 +2439,7 @@ export default function GateChecklistPage() {
               </div>
 
               <div>
-                <FieldLabel className="print-label">Actual Arrival Time</FieldLabel>
+                <FieldLabel className="print-label">ON / Wheels On</FieldLabel>
                 <TimeInput
                   value={form.actualArrivalTime}
                   disabled={!canEdit || !stdUnlocked}
