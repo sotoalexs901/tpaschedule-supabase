@@ -10,3 +10,5 @@
 
 [functions."flight-watch-sync-scheduled"]
   schedule = "*/5 * * * *"
+[functions."airport-weather-sync-scheduled"]
+  schedule = "*/15 * * * *"
