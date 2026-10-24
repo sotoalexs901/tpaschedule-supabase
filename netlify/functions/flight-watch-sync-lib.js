@@ -686,6 +686,7 @@ function normalizeFlight(result, watch) {
 
 async function syncWatch(db, docSnap) {
   let watch = { id: docSnap.id, ...(docSnap.data() || {}) };
+  let scheduleDebug = null;
   if (watch.enabled === false) return { id: watch.id, skipped: true };
 
   // Schedule enrichment is independent from FR24 live polling. Future flights can
@@ -694,6 +695,14 @@ async function syncWatch(db, docSnap) {
     try {
       const scheduleResult = await fetchAeroDataBoxSchedule(watch);
       const scheduleCandidate = scheduleResult?.candidate || null;
+      scheduleDebug = {
+        flightNumber: watch.flightNumber || "",
+        flightDate: watch.flightDate || "",
+        origin: watch.origin || "",
+        destination: watch.destination || "",
+        rows: Number(scheduleResult?.rows || 0),
+        diagnostic: scheduleResult?.diagnostic || null,
+      };
       const schedule = normalizeAeroDataBoxSchedule(scheduleCandidate, watch);
       if (Object.keys(schedule).length) {
         const previousStatus = upper(watch.status);
@@ -719,6 +728,13 @@ async function syncWatch(db, docSnap) {
         }, { merge: true });
       }
     } catch (error) {
+      scheduleDebug = {
+        flightNumber: watch.flightNumber || "",
+        flightDate: watch.flightDate || "",
+        origin: watch.origin || "",
+        destination: watch.destination || "",
+        error: clean(error?.message || error).slice(0, 500),
+      };
       console.error(`AeroDataBox schedule sync failed for ${watch.flightNumber}:`, error);
       await docSnap.ref.set({
         scheduleSyncedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -728,7 +744,7 @@ async function syncWatch(db, docSnap) {
   }
 
   if (!shouldPoll(watch)) {
-    return { id: watch.id, skipped: true, scheduleOnly: true, std: watch.std || null, sta: watch.sta || null };
+    return { id: watch.id, skipped: true, scheduleOnly: true, std: watch.std || null, sta: watch.sta || null, scheduleDebug };
   }
 
   try {
