@@ -53,6 +53,7 @@ export default function FlightWatchManagementPage() {
     flightDate: today(),
     origin: "",
     destination: "TPA",
+    linkedInboundFlightNumber: "",
     targetDepartments: ["ALL"],
     notifyEvents: { ...DEFAULT_FLIGHT_EVENTS },
     etaChangeMinutes: 10,
@@ -89,6 +90,7 @@ export default function FlightWatchManagementPage() {
         flightNumber: "",
         origin: "",
         destination: "TPA",
+        linkedInboundFlightNumber: "",
       }));
       setMessage("Flight added to live monitoring.");
     } catch (error) {
@@ -132,6 +134,7 @@ export default function FlightWatchManagementPage() {
               <Field label="Flight date"><input required type="date" value={form.flightDate} onChange={(e) => setForm({ ...form, flightDate: e.target.value })} style={inputStyle} /></Field>
               <Field label="Origin"><input value={form.origin} onChange={(e) => setForm({ ...form, origin: e.target.value.toUpperCase() })} placeholder="BOG" style={inputStyle} /></Field>
               <Field label="Destination"><input value={form.destination} onChange={(e) => setForm({ ...form, destination: e.target.value.toUpperCase() })} placeholder="TPA" style={inputStyle} /></Field>
+              <Field label="Linked inbound flight"><input value={form.linkedInboundFlightNumber} onChange={(e) => setForm({ ...form, linkedInboundFlightNumber: e.target.value.toUpperCase() })} placeholder="SY213" style={inputStyle} /></Field>
             </div>
 
             <Field label="Departments to notify">
@@ -202,6 +205,21 @@ export default function FlightWatchManagementPage() {
                   </div>
                   <div style={{ marginTop: 3, color: "#64748b", fontSize: 11 }}>{flight.origin || "—"} → {flight.destination || "TPA"} · {flight.flightDate || "Date not set"}</div>
                   <div style={{ marginTop: 5, color: "#475569", fontSize: 10.5 }}>Notify: {(flight.targetDepartments || ["ALL"]).join(", ")}</div>
+                  <div style={{ marginTop: 7, display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 10.5, color: "#64748b", fontWeight: 800 }}>Inbound turn:</span>
+                    <input
+                      defaultValue={flight.linkedInboundFlightNumber || ""}
+                      placeholder="e.g. SY213"
+                      onBlur={(e) => {
+                        const value = e.target.value.trim().toUpperCase();
+                        if (value !== String(flight.linkedInboundFlightNumber || "").trim().toUpperCase()) {
+                          updateFlightWatch(flight.id, { linkedInboundFlightNumber: value });
+                        }
+                      }}
+                      style={{ ...inputStyle, width: 105, padding: "6px 8px", fontSize: 10.5 }}
+                    />
+                    {flight.linkedInboundFlightNumber && <span style={{ fontSize: 9.5, color: "#047857", fontWeight: 900 }}>LINKED</span>}
+                  </div>
                 </div>
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
                   <button onClick={() => updateFlightWatch(flight.id, { enabled: flight.enabled === false })} style={secondaryButton}>{flight.enabled === false ? "Resume" : "Pause"}</button>
