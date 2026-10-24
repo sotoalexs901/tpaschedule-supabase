@@ -939,6 +939,66 @@ export default function WchrAgentOperationsPage() {
     [employee, user]
   );
 
+  // Persisted Live Location consent lives on the employee profile.
+  // The employee approves once; each future WCHR Punch In reuses that consent.
+  useEffect(() => {
+    if (!employee) return;
+    setTrackingConsent(employee?.live_tracking_consent === true);
+  }, [employee?.id, employee?.live_tracking_consent]);
+
+  const handleTrackingConsentChange = async (nextValue) => {
+    const consent = nextValue === true;
+    setTrackingConsent(consent);
+
+    if (!employee?.id) {
+      setError("Employee profile not found. Unable to save Live Location consent.");
+      return;
+    }
+
+    try {
+      await updateDoc(doc(db, "employees", employee.id), {
+        live_tracking_consent: consent,
+        live_tracking_consent_at: consent ? serverTimestamp() : null,
+        live_tracking_consent_version: "2026.10.24",
+        live_tracking_consent_updated_at: serverTimestamp(),
+        live_tracking_consent_updated_by: getVisibleUserName(user),
+      });
+
+      if (agentId && shift) {
+        await updateDoc(doc(db, "wchr_agent_shifts", agentId), {
+          live_tracking_consent: consent,
+          live_tracking_consent_source: "employee_profile",
+          live_tracking_consent_synced_at: serverTimestamp(),
+          ...(consent
+            ? {}
+            : {
+                current_location: "",
+                location_id: "",
+                location_source: "consent_revoked",
+                live_gps: null,
+                global_live_tracking_active: false,
+                location_updated_at: serverTimestamp(),
+              }),
+          updated_at: serverTimestamp(),
+        });
+      }
+
+      setEmployee((current) =>
+        current ? { ...current, live_tracking_consent: consent } : current
+      );
+
+      setMessage(
+        consent
+          ? "Live Location authorized. AeroStation will activate it automatically when you Punch In and stop it during Break or Punch Out."
+          : "Live Location authorization removed."
+      );
+    } catch (consentError) {
+      console.error("Live Location consent save failed:", consentError);
+      setTrackingConsent(employee?.live_tracking_consent === true);
+      setError(consentError?.message || "Unable to save Live Location consent.");
+    }
+  };
+
   // ============================================================
   // LIVE SHIFT
   // ============================================================
@@ -973,9 +1033,9 @@ export default function WchrAgentOperationsPage() {
             setSelectedLocation(data.current_location);
           }
 
-          setTrackingConsent(
-            data.live_tracking_consent === true
-          );
+          if (data.live_tracking_consent === true) {
+            setTrackingConsent(true);
+          }
         } else {
           setShift(null);
         }
@@ -995,6 +1055,42 @@ export default function WchrAgentOperationsPage() {
 
     return () => unsubscribe();
   }, [agentId]);
+
+  // One-time migration: previous shift-level consent counts as already approved.
+  // This prevents existing employees from being asked again after this update.
+  useEffect(() => {
+    if (
+      !employee?.id ||
+      employee?.live_tracking_consent === true ||
+      shift?.live_tracking_consent !== true
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    updateDoc(doc(db, "employees", employee.id), {
+      live_tracking_consent: true,
+      live_tracking_consent_at: serverTimestamp(),
+      live_tracking_consent_version: "2026.10.24",
+      live_tracking_consent_source: "migrated_from_active_shift",
+      live_tracking_consent_updated_at: serverTimestamp(),
+    })
+      .then(() => {
+        if (!cancelled) {
+          setEmployee((current) =>
+            current ? { ...current, live_tracking_consent: true } : current
+          );
+          setTrackingConsent(true);
+        }
+      })
+      .catch((migrationError) => {
+        console.warn("Live Location consent migration failed:", migrationError);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [employee?.id, employee?.live_tracking_consent, shift?.live_tracking_consent]);
 
   // ============================================================
   // UMNR CAPACITY LOCK
@@ -1402,12 +1498,23 @@ export default function WchrAgentOperationsPage() {
     }
   };
 
+  const availability = safeUpper(
+    shift?.availability_status
+  );
+
   // Geofenced operational location for both Lobby and WCHR Agents.
-  // Requires explicit consent and a foreground browser with location permission.
+  // Consent is persistent on the employee profile; tracking runs only while
+  // punched in and not on Break/Unavailable.
   const [gpsState, setGpsState] = useState("inactive");
   useEffect(() => {
-    if (!agentId || !isPunchedIn || shift?.live_tracking_consent !== true) {
-      setGpsState("inactive"); return undefined;
+    if (
+      !agentId ||
+      !isPunchedIn ||
+      employee?.live_tracking_consent !== true ||
+      [WCHR_AGENT_AVAILABILITY.BREAK, WCHR_AGENT_AVAILABILITY.UNAVAILABLE].includes(availability)
+    ) {
+      setGpsState("inactive");
+      return undefined;
     }
     if (!navigator.geolocation) { setGpsState("unsupported"); return undefined; }
     let cancelled=false, lastSaved=0, candidate="", consecutive=0;
@@ -1445,11 +1552,7 @@ export default function WchrAgentOperationsPage() {
     }, err=>{setGpsState(err.code===1?"permission-denied":"unavailable");setAutoLocationStatus("GPS unavailable");},
     {enableHighAccuracy:true,maximumAge:10000,timeout:20000});
     return ()=>{cancelled=true;navigator.geolocation.clearWatch(watcher);};
-  },[agentId,isPunchedIn,shift?.live_tracking_consent,shift?.current_location,operationalZones,activeReport?.id,activeReport?.service_status,activeReport?.tracking_status,activeReport?.ib_status]);
-
-  const availability = safeUpper(
-    shift?.availability_status
-  );
+  },[agentId,isPunchedIn,employee?.live_tracking_consent,availability,shift?.current_location,operationalZones,activeReport?.id,activeReport?.service_status,activeReport?.tracking_status,activeReport?.ib_status]);
 
   const isBusy =
     availability ===
@@ -1608,8 +1711,15 @@ export default function WchrAgentOperationsPage() {
       setError("");
       setMessage("");
 
+      const persistentTrackingConsent = employee?.live_tracking_consent === true || trackingConsent === true;
+
+      if (!persistentTrackingConsent) {
+        setError("Please authorize Live Location once before Punch In. AeroStation will remember your choice for future shifts.");
+        return;
+      }
+
       let startingLocation="Location Not Detected";
-      if (trackingConsent && operationalZones.length && navigator.geolocation) {
+      if (persistentTrackingConsent && operationalZones.length && navigator.geolocation) {
         try {
           const position=await new Promise((resolve,reject)=>navigator.geolocation.getCurrentPosition(resolve,reject,{enableHighAccuracy:true,maximumAge:0,timeout:15000}));
           const match=matchOperationalLocation(position.coords,operationalZones);
@@ -1626,12 +1736,19 @@ export default function WchrAgentOperationsPage() {
         lobbyMode,
         employee,
         user,
-        trackingConsent,
+        trackingConsent: persistentTrackingConsent,
         startingLocation,
       });
 
+      await updateDoc(doc(db, "wchr_agent_shifts", agentId), {
+        live_tracking_consent: true,
+        live_tracking_consent_source: "employee_profile",
+        live_tracking_consent_synced_at: serverTimestamp(),
+        updated_at: serverTimestamp(),
+      });
+
       setLobbyPromptOpen(false);
-      setMessage(`Punched In at ${startingLocation}. GPS will update the area while this page is open and permission is granted.`);
+      setMessage(`Punched In at ${startingLocation}. Live Location is active automatically for this shift and will stop during Break or Punch Out.`);
     } catch (err) {
       console.error("Punch In error:", err);
 
@@ -1665,6 +1782,17 @@ export default function WchrAgentOperationsPage() {
       await punchOutWchrAgent({
         agentId,
         user,
+      });
+
+      await updateDoc(doc(db, "wchr_agent_shifts", agentId), {
+        current_location: "",
+        location_id: "",
+        location_source: "off_duty",
+        live_gps: null,
+        global_live_tracking_active: false,
+        global_live_tracking_page: "",
+        location_updated_at: serverTimestamp(),
+        updated_at: serverTimestamp(),
       });
 
       setLobbyMode(null);
@@ -1707,8 +1835,30 @@ export default function WchrAgentOperationsPage() {
         availability: value,
       });
 
+      const nextAvailability = safeUpper(value);
+      if (nextAvailability === WCHR_AGENT_AVAILABILITY.BREAK || nextAvailability === WCHR_AGENT_AVAILABILITY.UNAVAILABLE) {
+        await updateDoc(doc(db, "wchr_agent_shifts", agentId), {
+          current_location: "",
+          location_id: "",
+          location_source: nextAvailability === WCHR_AGENT_AVAILABILITY.BREAK ? "break" : "unavailable",
+          live_gps: null,
+          global_live_tracking_active: false,
+          global_live_tracking_page: "",
+          location_updated_at: serverTimestamp(),
+          updated_at: serverTimestamp(),
+        });
+      } else if (nextAvailability === WCHR_AGENT_AVAILABILITY.AVAILABLE && employee?.live_tracking_consent === true) {
+        await updateDoc(doc(db, "wchr_agent_shifts", agentId), {
+          live_tracking_consent: true,
+          location_source: "gps_resume_pending",
+          updated_at: serverTimestamp(),
+        });
+      }
+
       setMessage(
-        `Availability changed to ${getStatusLabel(value)}.`
+        nextAvailability === WCHR_AGENT_AVAILABILITY.BREAK
+          ? "Break started. Live Location is off and your location is hidden until you return Available."
+          : `Availability changed to ${getStatusLabel(value)}.${nextAvailability === WCHR_AGENT_AVAILABILITY.AVAILABLE && employee?.live_tracking_consent === true ? " Live Location will resume automatically." : ""}`
       );
     } catch (err) {
       console.error("Availability error:", err);
@@ -3667,9 +3817,7 @@ export default function WchrAgentOperationsPage() {
                 type="checkbox"
                 checked={trackingConsent}
                 onChange={(event) =>
-                  setTrackingConsent(
-                    event.target.checked
-                  )
+                  handleTrackingConsentChange(event.target.checked)
                 }
                 style={{
                   marginTop: 3,
@@ -3686,7 +3834,7 @@ export default function WchrAgentOperationsPage() {
                     color: "#0f172a",
                   }}
                 >
-                  Allow automatic location detection during my shift
+                  Allow Live Location for WCHR Operations
                 </div>
 
                 <div
@@ -3697,7 +3845,7 @@ export default function WchrAgentOperationsPage() {
                     color: "#64748b",
                   }}
                 >
-                  This allows AeroStation Hub to associate your operational location updates with your active wheelchair assignment while you are punched in.
+                  Approve once. AeroStation remembers this authorization and automatically activates Live Location only while you are punched in. Tracking stops and your visible location is cleared during Break and after Punch Out.
                 </div>
               </div>
             </label>
