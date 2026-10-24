@@ -3,7 +3,7 @@ const admin = require("firebase-admin");
 const FR24_API_BASE = "https://fr24api.flightradar24.com/api";
 const AERODATABOX_API_BASE = "https://prod.api.market/api/v1/aedbx/aerodatabox";
 const ACTIVE_STATUSES = new Set(["AIRBORNE", "APPROACHING"]);
-const TERMINAL_STATUSES = new Set(["LANDED", "ARRIVED", "COMPLETED", "CANCELLED"]);
+const TERMINAL_STATUSES = new Set(["ARRIVED", "COMPLETED", "CANCELLED", "DIVERTED"]);
 
 function clean(value) {
   return String(value ?? "").trim();
@@ -303,10 +303,21 @@ function normalizeAeroDataBoxSchedule(candidate, watch) {
   const etd = movementTime(departure, "revisedTime") || movementTime(departure, "predictedTime");
   const eta = movementTime(arrival, "revisedTime") || movementTime(arrival, "predictedTime");
   const providerStatus = upper(candidate.status);
+  const providerArrived = providerStatus.includes("ARRIV") || providerStatus.includes("LAND");
+  const arrivalRunwayTime = movementTime(arrival, "runwayTime");
+  // AeroDataBox renamed actualTime to revisedTime; actualTime is retained as a
+  // compatibility fallback for marketplace/schema variations. For arrivals this
+  // is the gate/blocks-in time once the provider reports the flight as arrived.
+  const arrivalGateTime = providerArrived
+    ? (movementTime(arrival, "actualTime") || movementTime(arrival, "revisedTime"))
+    : null;
+
   let scheduleStatus = "SCHEDULED";
   if (providerStatus.includes("CANCEL")) scheduleStatus = "CANCELLED";
-  else if (providerStatus.includes("DELAY")) scheduleStatus = "DELAYED";
   else if (providerStatus.includes("DIVERT")) scheduleStatus = "DIVERTED";
+  else if (providerArrived && arrivalGateTime) scheduleStatus = "ARRIVED";
+  else if (providerArrived || arrivalRunwayTime) scheduleStatus = "LANDED";
+  else if (providerStatus.includes("DELAY")) scheduleStatus = "DELAYED";
 
   return {
     std: std || null,
@@ -316,6 +327,16 @@ function normalizeAeroDataBoxSchedule(candidate, watch) {
     etd: etd || null,
     estimatedOut: etd || null,
     scheduleEta: eta || null,
+    ...(arrivalRunwayTime ? {
+      actualOn: arrivalRunwayTime,
+      ata: arrivalRunwayTime,
+      actualOnSource: "AeroDataBox runwayTime",
+    } : {}),
+    ...(arrivalGateTime ? {
+      actualIn: arrivalGateTime,
+      gateArrivedAt: arrivalGateTime,
+      actualInSource: "AeroDataBox revised/actual gate time",
+    } : {}),
     origin: movementAirportCode(departure) || upper(watch.origin),
     destination: movementAirportCode(arrival) || upper(watch.destination || "TPA"),
     departureTerminal: clean(departure.terminal),
@@ -331,8 +352,16 @@ function normalizeAeroDataBoxSchedule(candidate, watch) {
 
 function scheduleSyncDecision(watch) {
   const status = upper(watch.status);
-  if (watch.trackingComplete === true || TERMINAL_STATUSES.has(status)) {
+  const hasActualIn = Boolean(watch.actualIn);
+
+  // A LANDED flight is not complete for station operations until we have a true
+  // gate/blocks-in time. Keep AeroDataBox alive after touchdown so Gate Checklist
+  // can receive separate ON (runway) and IN (gate) timestamps.
+  if (status !== "LANDED" && (watch.trackingComplete === true || TERMINAL_STATUSES.has(status))) {
     return { due: false, reason: "terminal-or-complete", retryInMinutes: null };
+  }
+  if (status === "LANDED" && hasActualIn) {
+    return { due: false, reason: "landed-with-actual-in", retryInMinutes: null };
   }
 
   const date = clean(watch.flightDate);
@@ -363,8 +392,18 @@ function scheduleSyncDecision(watch) {
   }
 
   const sameDay = date === tampa.date;
-  const intervalHours = sameDay ? 3 : 24;
-  const intervalMs = intervalHours * 60 * 60 * 1000;
+
+  // Same-day active flights need fresher AeroDataBox data so revised/runway times
+  // can become operational ON/IN timestamps without waiting hours.
+  let intervalMs;
+  if (sameDay && status === "LANDED" && !hasActualIn) {
+    intervalMs = 5 * 60 * 1000;
+  } else if (sameDay && ACTIVE_STATUSES.has(status)) {
+    intervalMs = 15 * 60 * 1000;
+  } else {
+    const intervalHours = sameDay ? 3 : 24;
+    intervalMs = intervalHours * 60 * 60 * 1000;
+  }
   const remainingMs = Math.max(0, intervalMs - ageMs);
   return {
     due: ageMs >= intervalMs - 15000,
@@ -449,6 +488,7 @@ async function fetchFlight(watch) {
 }
 
 function deriveStatus(result, watch) {
+  if (watch.actualIn) return "ARRIVED";
   if (!result) return "MONITORING";
   const flight = result.data || {};
   const wantedDestination = upper(watch.destination || "TPA");
@@ -466,7 +506,8 @@ function deriveStatus(result, watch) {
 function nextPollMinutes(status) {
   if (ACTIVE_STATUSES.has(status)) return 5;
   if (["MONITORING", "SCHEDULED"].includes(status)) return 15;
-  if (["LANDED", "DIVERTED"].includes(status)) return 30;
+  if (status === "LANDED") return 5;
+  if (status === "DIVERTED") return 30;
   return 60;
 }
 
@@ -704,6 +745,8 @@ function normalizeFlight(result, watch) {
   const eta = result?.kind === "live" ? parseIso(flight.eta) : null;
   const atd = parseIso(flight.datetime_takeoff) || (result?.kind === "live" ? parseIso(flight.timestamp) : null);
   const ata = parseIso(flight.datetime_landed);
+  const actualOn = ata || parseIso(watch.actualOn);
+  const actualIn = parseIso(watch.actualIn);
   const manualSta = parseIso(watch.sta || watch.scheduledArrival || watch.scheduledIn);
   const delayMinutes = eta && manualSta ? Math.max(0, minutesBetween(eta, manualSta)) : 0;
 
@@ -723,15 +766,17 @@ function normalizeFlight(result, watch) {
     std: parseIso(watch.std || watch.scheduledDeparture || watch.scheduledOut) || null,
     etd: null,
     atd: atd || null,
-    ata: ata || null,
+    ata: actualOn || null,
     scheduledIn: manualSta || null,
     estimatedIn: eta || null,
     scheduledOut: parseIso(watch.std || watch.scheduledDeparture || watch.scheduledOut) || null,
     estimatedOut: null,
     actualOut: atd || null,
     actualOff: atd || null,
-    actualOn: ata || null,
-    actualIn: ata || null,
+    actualOn: actualOn || null,
+    actualIn: actualIn || null,
+    actualOnSource: actualOn ? (ata ? "Flightradar24 datetime_landed" : (watch.actualOnSource || "AeroDataBox runwayTime")) : "",
+    actualInSource: actualIn ? (watch.actualInSource || "AeroDataBox gate time") : "",
     delayMinutes,
     latitude: Number.isFinite(Number(flight.lat)) ? Number(flight.lat) : null,
     longitude: Number.isFinite(Number(flight.lon)) ? Number(flight.lon) : null,
