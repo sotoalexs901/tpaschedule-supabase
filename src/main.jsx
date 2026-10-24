@@ -105,6 +105,8 @@ import BSODailyReportPage from "./pages/BSODailyReportPage.jsx";
 import BSODailyManagementPage from "./pages/BSODailyManagementPage.jsx";
 import PassengerFeedbackManagementPage from "./pages/PassengerFeedbackManagementPage.jsx";
 import FlightWatchManagementPage from "./pages/FlightWatchManagementPage.jsx";
+import SystemUpdatePage from "./pages/SystemUpdatePage.jsx";
+import SystemUpdateGate from "./components/SystemUpdateGate.jsx";
 
 
 // ============================================================
@@ -511,6 +513,7 @@ function AppRouter() {
   return (
     <BrowserRouter>
       <UpdatePrompt />
+      <SystemUpdateGate />
 
       <Routes>
         {/* PUBLIC ROUTES */}
@@ -1092,6 +1095,15 @@ function AppRouter() {
           />
 
           {/* MANAGEMENT / ADMIN */}
+
+          <Route
+            path="admin/system-update"
+            element={
+              <ProtectedRoute roles={["station_manager"]}>
+                <SystemUpdatePage />
+              </ProtectedRoute>
+            }
+          />
 
           <Route
             path="admin/activity-dashboard"
