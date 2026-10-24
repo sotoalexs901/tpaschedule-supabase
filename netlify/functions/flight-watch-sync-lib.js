@@ -306,8 +306,20 @@ function shouldSyncSchedule(watch) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return false;
   const tampa = tampaDateParts();
   if (date < tampa.date) return false;
+
   const last = millis(watch.scheduleSyncedAt);
   if (!last) return true;
+
+  // IMPORTANT: a previous lookup that returned no usable STD/STA is NOT a successful
+  // schedule sync. Retry those flights frequently so a temporary no-match does not
+  // suppress AeroDataBox lookups for 3-24 hours.
+  const hasSchedule = Boolean(watch.std || watch.sta || watch.scheduledOut || watch.scheduledIn);
+  const hadScheduleError = Boolean(clean(watch.scheduleSyncError));
+  if (!hasSchedule || hadScheduleError) {
+    return Date.now() - last >= 15 * 60 * 1000 - 15000;
+  }
+
+  // Once schedule data exists, refresh conservatively to save API units.
   const sameDay = date === tampa.date;
   const intervalHours = sameDay ? 3 : 24;
   return Date.now() - last >= intervalHours * 60 * 60 * 1000;
