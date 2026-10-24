@@ -101,12 +101,44 @@ function tampaMonthDay(date = new Date()) {
 function normalizeAccount(value) {
   const raw = upper(value).replace(/[^A-Z0-9]+/g, " ").trim();
   if (!raw) return "";
+
+  // Sun Country
   if (raw === "SY" || raw.includes("SUN COUNTRY")) return "SY";
-  if (raw === "WL" || raw === "WAL" || raw.includes("WORLD ATLANTIC")) return "WL";
+
+  // World Atlantic / Invicta schedule aliases
+  if (
+    raw === "WL" ||
+    raw === "WAL" ||
+    raw.includes("WORLD ATLANTIC") ||
+    raw.includes("WL INVICTA")
+  ) return "WL";
+
+  // Avianca
   if (raw === "AV" || raw.includes("AVIANCA")) return "AV";
+
+  // Aeromexico schedules are stored under OTHER
+  if (
+    raw === "AM" ||
+    raw === "AEROMEXICO" ||
+    raw === "AEROMEXICO OTHER" ||
+    raw.includes("AEROMEXICO")
+  ) return "AEROMEXICO OTHER";
+
+  // AA BSO
   if (raw.includes("AA BSO") || raw === "BSO") return "AA BSO";
-  if (raw.includes("DL CABIN") || raw.includes("CABIN SERVICE") || raw === "DL" || raw.includes("DELTA")) return "DL CABIN SERVICE";
+
+  // Delta Cabin Service schedule aliases
+  if (
+    raw === "CABIN" ||
+    raw.includes("DL CABIN") ||
+    raw.includes("CABIN SERVICE") ||
+    raw === "DL" ||
+    raw.includes("DELTA")
+  ) return "DL CABIN SERVICE";
+
+  // WCHR
   if (raw.includes("WCHR") || raw.includes("WHEELCHAIR")) return "WCHR";
+
   return raw;
 }
 
