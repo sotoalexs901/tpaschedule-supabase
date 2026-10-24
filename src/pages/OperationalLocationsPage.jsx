@@ -8,6 +8,7 @@ import { useUser } from '../UserContext.jsx';
 
 const COLLECTION = 'operational_locations';
 const ROUTES_COLLECTION = 'operational_routes';
+const ROUTE_SAMPLES_COLLECTION = 'operational_route_samples';
 const AREAS = ['Main Terminal', 'Airside A', 'Airside C', 'Airside E', 'Airside F', 'Rental Car', 'Other'];
 const TYPES = ['Counter', 'Gate', 'Lobby', 'Security', 'CBP / Customs', 'Storage', 'Train', 'Other'];
 const field = { width: '100%', boxSizing: 'border-box', padding: 11, borderRadius: 9, border: '1px solid #cbd5e1', background: '#fff' };
@@ -36,6 +37,25 @@ const routeDuration = seconds => {
   return `${minutes}m ${String(secs).padStart(2, '0')}s`;
 };
 
+const percentile = (values, percentileValue) => {
+  const sorted = values.map(Number).filter(Number.isFinite).sort((a, b) => a - b);
+  if (!sorted.length) return 0;
+  const rank = Math.ceil((percentileValue / 100) * sorted.length) - 1;
+  return sorted[Math.max(0, Math.min(sorted.length - 1, rank))];
+};
+const median = values => {
+  const sorted = values.map(Number).filter(Number.isFinite).sort((a, b) => a - b);
+  if (!sorted.length) return 0;
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[middle] : Math.round((sorted[middle - 1] + sorted[middle]) / 2);
+};
+const routeConfidence = count => {
+  if (count >= 16) return { label: 'HIGH', background: '#ecfdf5', color: '#047857' };
+  if (count >= 6) return { label: 'MEDIUM', background: '#eff6ff', color: '#1d4ed8' };
+  if (count >= 3) return { label: 'LOW', background: '#fff7ed', color: '#c2410c' };
+  return { label: 'LEARNING', background: '#f8fafc', color: '#64748b' };
+};
+
 export default function OperationalLocationsPage() {
   const { user } = useUser();
   const role = String(user?.role || '').toLowerCase();
@@ -44,6 +64,9 @@ export default function OperationalLocationsPage() {
   const [items, setItems] = useState([]);
   const [routes, setRoutes] = useState([]);
   const [routesLoading, setRoutesLoading] = useState(true);
+  const [routeSamples, setRouteSamples] = useState([]);
+  const [routeSamplesLoading, setRouteSamplesLoading] = useState(true);
+  const [approvingLearningKey, setApprovingLearningKey] = useState('');
   const [form, setForm] = useState(blank);
   const [editingId, setEditingId] = useState('');
   const [loading, setLoading] = useState(true);
@@ -257,6 +280,18 @@ export default function OperationalLocationsPage() {
     }, e => { setRoutesLoading(false); setError(`Unable to load recorded routes: ${e.message}`); });
   }, [allowed]);
 
+
+  useEffect(() => {
+    if (!allowed) { setRouteSamplesLoading(false); return; }
+    return onSnapshot(collection(db, ROUTE_SAMPLES_COLLECTION), snap => {
+      setRouteSamples(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      setRouteSamplesLoading(false);
+    }, e => {
+      setRouteSamplesLoading(false);
+      setError(`Unable to load employee route learning samples: ${e.message}`);
+    });
+  }, [allowed]);
+
   const visible = useMemo(() => items.filter(x => `${x.name} ${x.area} ${x.type} ${x.id}`.toLowerCase().includes(search.toLowerCase())).sort((a,b) => (a.area || '').localeCompare(b.area || '') || (a.name || '').localeCompare(b.name || '')), [items, search]);
 
   const routeSummaries = useMemo(() => {
@@ -272,6 +307,108 @@ export default function OperationalLocationsPage() {
     });
     return Array.from(groups.values()).map(group => ({ ...group, averageSeconds: group.count ? Math.round(group.totalSeconds / group.count) : 0, averageMeters: group.count ? Math.round(group.totalMeters / group.count) : 0 })).sort((a,b) => `${a.originName} ${a.destinationName}`.localeCompare(`${b.originName} ${b.destinationName}`));
   }, [routes]);
+
+
+  const learningGroups = useMemo(() => {
+    const groups = new Map();
+    routeSamples
+      .filter(sample => String(sample.learning_status || '').toUpperCase() === 'COMPLETED')
+      .filter(sample => Number(sample.duration_seconds) > 0)
+      .filter(sample => text(sample.origin_name) && text(sample.destination_name))
+      .forEach(sample => {
+        const originName = text(sample.origin_name);
+        const destinationName = text(sample.destination_name);
+        const direction = String(sample.service_direction || 'OB').toUpperCase();
+        const serviceType = String(sample.service_type || 'WCHR').toUpperCase();
+        const key = `${originName.toUpperCase()}__${destinationName.toUpperCase()}__${direction}__${serviceType}`;
+        const group = groups.get(key) || {
+          key, originName, destinationName, direction, serviceType,
+          samples: [], durations: [], agents: new Set(),
+        };
+        group.samples.push(sample);
+        group.durations.push(Number(sample.duration_seconds));
+        if (text(sample.agent_id || sample.agent_name)) group.agents.add(text(sample.agent_id || sample.agent_name));
+        groups.set(key, group);
+      });
+
+    return Array.from(groups.values()).map(group => {
+      const typicalSeconds = median(group.durations);
+      const p90Seconds = percentile(group.durations, 90);
+      const fastestSeconds = Math.min(...group.durations);
+      const confidence = routeConfidence(group.samples.length);
+      const originLocation = activeLocations.find(item => text(item.name).toUpperCase() === group.originName.toUpperCase());
+      const destinationLocation = activeLocations.find(item => text(item.name).toUpperCase() === group.destinationName.toUpperCase());
+      const alreadyApproved = routes.some(route =>
+        route.source === 'route_learning_approved_v1' &&
+        text(route.learningKey) === group.key
+      );
+      return {
+        ...group,
+        agentCount: group.agents.size,
+        typicalSeconds,
+        p90Seconds,
+        fastestSeconds,
+        confidence,
+        originLocation,
+        destinationLocation,
+        alreadyApproved,
+      };
+    }).sort((a, b) => b.samples.length - a.samples.length || `${a.originName} ${a.destinationName}`.localeCompare(`${b.originName} ${b.destinationName}`));
+  }, [routeSamples, activeLocations, routes]);
+
+  const approveLearningRoute = async group => {
+    if (!allowed || approvingLearningKey) return;
+    if (group.samples.length < 3) {
+      setError('At least 3 completed employee trips are required before a learned route can be approved.');
+      return;
+    }
+    if (group.alreadyApproved) {
+      setError('This learned route has already been approved.');
+      return;
+    }
+    const confirmed = window.confirm(
+      `Approve learned route ${group.originName} → ${group.destinationName}?\n\n` +
+      `${group.samples.length} completed trips · Typical ${routeDuration(group.typicalSeconds)} · P90 ${routeDuration(group.p90Seconds)} · Confidence ${group.confidence.label}.`
+    );
+    if (!confirmed) return;
+    setApprovingLearningKey(group.key);
+    setError('');
+    try {
+      const identity = user?.uid || user?.id || user?.employeeId || '';
+      await addDoc(collection(db, ROUTES_COLLECTION), {
+        originLocationId: group.originLocation?.id || '',
+        originName: group.originName,
+        originArea: group.originLocation?.area || '',
+        destinationLocationId: group.destinationLocation?.id || '',
+        destinationName: group.destinationName,
+        destinationArea: group.destinationLocation?.area || '',
+        routeMode: group.serviceType,
+        serviceDirection: group.direction,
+        status: 'completed',
+        durationSeconds: group.typicalSeconds,
+        averageSeconds: group.typicalSeconds,
+        p90Seconds: group.p90Seconds,
+        fastestSeconds: group.fastestSeconds,
+        sampleCount: group.samples.length,
+        agentCount: group.agentCount,
+        confidence: group.confidence.label,
+        learningKey: group.key,
+        sampleIds: group.samples.map(sample => sample.id),
+        createdById: String(identity),
+        createdByName: userName(user),
+        createdAt: serverTimestamp(),
+        approvedAt: serverTimestamp(),
+        approvedById: String(identity),
+        approvedByName: userName(user),
+        source: 'route_learning_approved_v1',
+      });
+      setMessage(`Learned route approved: ${group.originName} to ${group.destinationName} · typical ${routeDuration(group.typicalSeconds)}.`);
+    } catch (e) {
+      setError(`Unable to approve learned route: ${e.message}`);
+    } finally {
+      setApprovingLearningKey('');
+    }
+  };
 
   const capture = () => {
     setMessage(''); setError('');
@@ -421,6 +558,29 @@ export default function OperationalLocationsPage() {
       </div>
       <div style={{display:'flex',gap:10,flexWrap:'wrap'}}><button style={{...button,background:'#1769aa',color:'#fff'}} disabled={busy||capturing} type="submit">{uploading?'Uploading photo…':busy?'Saving…':editingId?'Save Changes':'Save New Location'}</button>{editingId&&<button type="button" style={button} onClick={()=>{setEditingId('');setForm(blank);resetPhoto();}}>Cancel Edit</button>}</div>
     </form>
+    <section style={{marginTop:24,background:'#fff',border:'1px solid #c7d2fe',borderRadius:18,padding:18}}>
+      <div style={{display:'flex',justifyContent:'space-between',gap:12,alignItems:'center',flexWrap:'wrap'}}>
+        <div><div style={{fontSize:12,fontWeight:800,letterSpacing:1.2,color:'#4f46e5'}}>SMART ROUTE LEARNING</div><h2 style={{margin:'3px 0 0'}}>Employee Route Learning</h2></div>
+        <span style={{fontSize:12,color:'#64748b'}}>{routeSamples.filter(sample=>String(sample.learning_status||'').toUpperCase()==='COMPLETED').length} completed samples</span>
+      </div>
+      <p style={{color:'#64748b',fontSize:14,lineHeight:1.55}}>WCHR agents generate these route samples automatically from consented live tracking while performing real services. Review the operational evidence below before approving a learned route for Dispatch and Smart Intelligence.</p>
+      {routeSamplesLoading ? <p>Loading employee route learning…</p> : learningGroups.length===0 ? <div style={{padding:14,borderRadius:12,background:'#f8fafc',color:'#64748b'}}>No completed employee route samples yet. Samples will appear automatically after agents complete tracked WCHR journeys.</div> : <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(280px,1fr))',gap:12}}>{learningGroups.map(group=><article key={group.key} style={{padding:15,border:'1px solid #e2e8f0',borderRadius:14,background:'#f8fbff'}}>
+        <div style={{display:'flex',justifyContent:'space-between',gap:10,alignItems:'flex-start'}}>
+          <div><div style={{fontWeight:900,fontSize:15}}>{group.originName} → {group.destinationName}</div><div style={{fontSize:12,color:'#64748b',marginTop:3}}>{group.serviceType} · {group.direction} · {group.samples.length} completed trip{group.samples.length===1?'':'s'} · {group.agentCount} agent{group.agentCount===1?'':'s'}</div></div>
+          <span style={{padding:'5px 9px',borderRadius:999,background:group.confidence.background,color:group.confidence.color,fontSize:11,fontWeight:900}}>{group.confidence.label}</span>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,marginTop:12}}>
+          <div style={{padding:10,borderRadius:10,background:'#fff'}}><small style={{color:'#64748b'}}>Typical</small><div style={{fontWeight:900}}>{routeDuration(group.typicalSeconds)}</div></div>
+          <div style={{padding:10,borderRadius:10,background:'#fff'}}><small style={{color:'#64748b'}}>P90</small><div style={{fontWeight:900}}>{routeDuration(group.p90Seconds)}</div></div>
+          <div style={{padding:10,borderRadius:10,background:'#fff'}}><small style={{color:'#64748b'}}>Fastest</small><div style={{fontWeight:900}}>{routeDuration(group.fastestSeconds)}</div></div>
+        </div>
+        <div style={{marginTop:10,fontSize:12,color:'#64748b'}}>Location match: {group.originLocation?'✓':'⚠'} Origin · {group.destinationLocation?'✓':'⚠'} Destination</div>
+        <div style={{marginTop:12}}>
+          <button type="button" style={{...button,background:group.alreadyApproved?'#ecfdf5':group.samples.length>=3?'#4f46e5':'#f8fafc',color:group.alreadyApproved?'#047857':group.samples.length>=3?'#fff':'#94a3b8',borderColor:group.alreadyApproved?'#a7f3d0':group.samples.length>=3?'#4f46e5':'#e2e8f0'}} disabled={group.alreadyApproved||group.samples.length<3||Boolean(approvingLearningKey)} onClick={()=>approveLearningRoute(group)}>{group.alreadyApproved?'✓ Approved for Smart Dispatch':approvingLearningKey===group.key?'Approving…':group.samples.length<3?`Learning · ${3-group.samples.length} more trip${3-group.samples.length===1?'':'s'} needed`:'Approve Route for Smart Dispatch'}</button>
+        </div>
+      </article>)}</div>}
+    </section>
+
     <section style={{marginTop:24,background:'#fff',border:'1px solid #e2e8f0',borderRadius:18,padding:18}}>
       <div style={{display:'flex',justifyContent:'space-between',gap:12,alignItems:'center',flexWrap:'wrap'}}><div><div style={{fontSize:12,fontWeight:800,letterSpacing:1.2,color:'#7c3aed'}}>ROUTE INTELLIGENCE</div><h2 style={{margin:'3px 0 0'}}>Recorded Routes</h2></div><span style={{fontSize:12,color:'#64748b'}}>{routes.length} recordings</span></div>
       <p style={{color:'#64748b',fontSize:14}}>Completed recordings are grouped by origin, destination and route type. These averages can later feed Arrival Readiness and Smart Dispatch.</p>
