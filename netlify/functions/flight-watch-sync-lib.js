@@ -1,6 +1,6 @@
 const admin = require("firebase-admin");
 
-const AEROAPI_BASE = "https://aeroapi.flightaware.com/aeroapi";
+const FR24_API_BASE = "https://fr24api.flightradar24.com/api";
 const ACTIVE_STATUSES = new Set(["AIRBORNE", "APPROACHING"]);
 
 function clean(value) {
@@ -45,65 +45,133 @@ function minutesBetween(a, b) {
   return Math.round((aa - bb) / 60000);
 }
 
-function airportCode(airport) {
-  if (!airport) return "";
-  if (typeof airport === "string") return upper(airport).replace(/^K(?=[A-Z]{3}$)/, "");
-  return upper(airport.code_iata || airport.code || airport.code_icao || "").replace(/^K(?=[A-Z]{3}$)/, "");
+function airportCode(value) {
+  if (!value) return "";
+  if (typeof value === "string") return upper(value).replace(/^K(?=[A-Z]{3}$)/, "");
+  return upper(
+    value.iata ||
+    value.icao ||
+    value.code_iata ||
+    value.code_icao ||
+    value.code ||
+    ""
+  ).replace(/^K(?=[A-Z]{3}$)/, "");
 }
 
-function flightTimeCandidates(flight) {
-  return [
-    flight.scheduled_out,
-    flight.scheduled_off,
-    flight.estimated_out,
-    flight.actual_out,
-    flight.scheduled_in,
-    flight.estimated_in,
-    flight.actual_in,
-  ].map(millis).filter(Boolean);
+function parseIso(value) {
+  if (!value) return null;
+  const ms = new Date(value).getTime();
+  return Number.isNaN(ms) ? null : new Date(ms).toISOString();
 }
 
-function selectFlight(flights, watch) {
-  if (!Array.isArray(flights) || !flights.length) return null;
+function watchDateWindow(watch) {
+  const date = clean(watch.flightDate);
+  const base = date && /^\d{4}-\d{2}-\d{2}$/.test(date)
+    ? new Date(`${date}T00:00:00Z`)
+    : new Date();
+  const from = new Date(base.getTime() - 6 * 60 * 60 * 1000);
+  const to = new Date(base.getTime() + 30 * 60 * 60 * 1000);
+  const fmt = (d) => d.toISOString().slice(0, 19);
+  return { from: fmt(from), to: fmt(to) };
+}
+
+function fr24Headers() {
+  const token = clean(process.env.FLIGHTRADAR24_API_TOKEN);
+  if (!token) throw new Error("FLIGHTRADAR24_API_TOKEN is not configured.");
+  return {
+    Authorization: `Bearer ${token}`,
+    Accept: "application/json",
+    "Accept-Version": "v1",
+  };
+}
+
+async function fr24Get(path, params = {}) {
+  const url = new URL(`${FR24_API_BASE}${path}`);
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== "") url.searchParams.set(key, String(value));
+  });
+  const response = await fetch(url, { headers: fr24Headers() });
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Flightradar24 ${response.status}: ${body.slice(0, 220)}`);
+  }
+  return response.json();
+}
+
+function sameFlightNumber(candidate, ident) {
+  const wanted = upper(ident).replace(/\s+/g, "");
+  const flight = upper(candidate?.flight).replace(/\s+/g, "");
+  const callsign = upper(candidate?.callsign).replace(/\s+/g, "");
+  return flight === wanted || callsign === wanted || flight.endsWith(wanted) || callsign.endsWith(wanted);
+}
+
+function routeScore(candidate, watch) {
+  let score = 0;
   const wantedOrigin = upper(watch.origin);
   const wantedDestination = upper(watch.destination || "TPA");
-  const targetDate = watch.flightDate ? new Date(`${watch.flightDate}T12:00:00Z`).getTime() : Date.now();
-
-  const scored = flights.map((flight) => {
-    let score = 0;
-    const origin = airportCode(flight.origin);
-    const destination = airportCode(flight.destination);
-    if (wantedOrigin && origin === wantedOrigin) score += 100;
-    if (wantedDestination && destination === wantedDestination) score += 100;
-    const times = flightTimeCandidates(flight);
-    if (times.length) {
-      const closest = Math.min(...times.map((time) => Math.abs(time - targetDate)));
-      score -= closest / 3600000;
-    }
-    return { flight, score };
-  });
-
-  scored.sort((a, b) => b.score - a.score);
-  return scored[0].flight;
+  const origin = airportCode(candidate.orig_iata || candidate.orig_icao || candidate.origin_icao);
+  const destination = airportCode(candidate.dest_iata || candidate.dest_icao || candidate.destination_icao);
+  if (sameFlightNumber(candidate, watch.flightNumber)) score += 200;
+  if (wantedOrigin && origin === wantedOrigin) score += 100;
+  if (wantedDestination && destination === wantedDestination) score += 100;
+  const ts = millis(candidate.timestamp || candidate.first_seen || candidate.datetime_takeoff || candidate.last_seen);
+  if (ts) score -= Math.abs(Date.now() - ts) / 3600000;
+  return score;
 }
 
-function deriveStatus(flight) {
-  if (!flight) return "MONITORING";
-  if (flight.cancelled) return "CANCELLED";
-  if (flight.diverted) return "DIVERTED";
-  if (flight.actual_in) return "ARRIVED";
-  if (flight.actual_on) return "LANDED";
-  if (flight.actual_off || flight.actual_out) return "AIRBORNE";
+function selectBest(candidates, watch) {
+  if (!Array.isArray(candidates) || !candidates.length) return null;
+  return candidates
+    .map((candidate) => ({ candidate, score: routeScore(candidate, watch) }))
+    .sort((a, b) => b.score - a.score)[0]?.candidate || null;
+}
 
-  const delay = minutesBetween(flight.estimated_out || flight.predicted_out, flight.scheduled_out);
-  if (delay >= 15) return "DELAYED";
-  return upper(flight.status || "SCHEDULED").includes("DELAY") ? "DELAYED" : "SCHEDULED";
+async function fetchLiveFlight(watch) {
+  // Explorer supports Live Flight Positions Full. Filtering by flight number keeps
+  // returned entities (and credits) small when the flight is already airborne.
+  const data = await fr24Get("/live/flight-positions/full", {
+    flights: upper(watch.flightNumber),
+    limit: 20,
+  });
+  return selectBest(data.data || [], watch);
+}
+
+async function fetchRecentSummary(watch) {
+  const { from, to } = watchDateWindow(watch);
+  const data = await fr24Get("/flight-summary/light", {
+    flight_datetime_from: from,
+    flight_datetime_to: to,
+    flights: upper(watch.flightNumber),
+    limit: 20,
+    sort: "desc",
+  });
+  return selectBest(data.data || [], watch);
+}
+
+async function fetchFlight(watch) {
+  const live = await fetchLiveFlight(watch);
+  if (live) return { kind: "live", data: live };
+  const summary = await fetchRecentSummary(watch);
+  if (summary) return { kind: "summary", data: summary };
+  return null;
+}
+
+function deriveStatus(result, watch) {
+  if (!result) return "MONITORING";
+  const flight = result.data || {};
+  const wantedDestination = upper(watch.destination || "TPA");
+  const actualDestination = airportCode(flight.dest_iata_actual || flight.destination_icao_actual);
+  if (actualDestination && wantedDestination && actualDestination !== wantedDestination) return "DIVERTED";
+  if (result.kind === "live") return "AIRBORNE";
+  if (flight.datetime_landed) return "LANDED";
+  if (flight.flight_ended === false) return "AIRBORNE";
+  return "MONITORING";
 }
 
 function nextPollMinutes(status) {
   if (ACTIVE_STATUSES.has(status)) return 5;
-  if (["DELAYED", "SCHEDULED", "MONITORING"].includes(status)) return 15;
-  if (["LANDED"].includes(status)) return 5;
+  if (["MONITORING", "SCHEDULED"].includes(status)) return 15;
+  if (["LANDED", "DIVERTED"].includes(status)) return 30;
   return 60;
 }
 
@@ -112,26 +180,6 @@ function shouldPoll(watch) {
   if (!last) return true;
   const interval = Number(watch.nextPollMinutes || nextPollMinutes(upper(watch.status)));
   return Date.now() - last >= Math.max(5, interval) * 60000 - 15000;
-}
-
-async function fetchFlight(ident, watch) {
-  const apiKey = clean(process.env.FLIGHTAWARE_API_KEY);
-  if (!apiKey) throw new Error("FLIGHTAWARE_API_KEY is not configured.");
-
-  const url = new URL(`${AEROAPI_BASE}/flights/${encodeURIComponent(ident)}`);
-  url.searchParams.set("max_pages", "1");
-
-  const response = await fetch(url, {
-    headers: { "x-apikey": apiKey, Accept: "application/json" },
-  });
-
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`FlightAware ${response.status}: ${body.slice(0, 180)}`);
-  }
-
-  const data = await response.json();
-  return selectFlight(data.flights || [], watch);
 }
 
 function eventEnabled(watch, key) {
@@ -291,39 +339,49 @@ async function notifyEvent(db, watch, event, next) {
   await pushNotifications(db, users, watch, event, copy);
 }
 
-function normalizeFlight(flight, watch) {
-  const status = deriveStatus(flight);
-  const scheduledIn = flight.scheduled_in || null;
-  const estimatedIn = flight.estimated_in || flight.predicted_in || scheduledIn || null;
-  const scheduledOut = flight.scheduled_out || null;
-  const estimatedOut = flight.estimated_out || flight.predicted_out || scheduledOut || null;
-  const delayMinutes = Math.max(0, minutesBetween(estimatedOut, scheduledOut));
+function normalizeFlight(result, watch) {
+  const flight = result?.data || {};
+  const status = deriveStatus(result, watch);
+  const eta = result?.kind === "live" ? parseIso(flight.eta) : null;
+  const atd = parseIso(flight.datetime_takeoff) || (result?.kind === "live" ? parseIso(flight.timestamp) : null);
+  const ata = parseIso(flight.datetime_landed);
+  const manualSta = parseIso(watch.sta || watch.scheduledArrival || watch.scheduledIn);
+  const delayMinutes = eta && manualSta ? Math.max(0, minutesBetween(eta, manualSta)) : 0;
 
   return {
-    status,
-    provider: "flightaware",
-    faFlightId: clean(flight.fa_flight_id),
-    origin: airportCode(flight.origin) || upper(watch.origin),
-    destination: airportCode(flight.destination) || upper(watch.destination || "TPA"),
-    sta: scheduledIn,
-    eta: estimatedIn,
-    std: scheduledOut,
-    etd: estimatedOut,
-    atd: flight.actual_out || flight.actual_off || null,
-    ata: flight.actual_in || flight.actual_on || null,
-    scheduledIn,
-    estimatedIn,
-    scheduledOut,
-    estimatedOut,
-    actualOut: flight.actual_out || null,
-    actualOff: flight.actual_off || null,
-    actualOn: flight.actual_on || null,
-    actualIn: flight.actual_in || null,
+    status: delayMinutes >= 15 && status === "MONITORING" ? "DELAYED" : status,
+    provider: "flightradar24",
+    fr24Id: clean(flight.fr24_id),
+    origin: airportCode(flight.orig_iata || flight.orig_icao || flight.origin_icao) || upper(watch.origin),
+    destination: airportCode(flight.dest_iata || flight.dest_icao || flight.destination_icao) || upper(watch.destination || "TPA"),
+    actualDestination: airportCode(flight.dest_iata_actual || flight.destination_icao_actual) || "",
+    sta: manualSta || null,
+    eta: eta || null,
+    std: parseIso(watch.std || watch.scheduledDeparture || watch.scheduledOut) || null,
+    etd: null,
+    atd: atd || null,
+    ata: ata || null,
+    scheduledIn: manualSta || null,
+    estimatedIn: eta || null,
+    scheduledOut: parseIso(watch.std || watch.scheduledDeparture || watch.scheduledOut) || null,
+    estimatedOut: null,
+    actualOut: atd || null,
+    actualOff: atd || null,
+    actualOn: ata || null,
+    actualIn: ata || null,
     delayMinutes,
-    progressPercent: Number(flight.progress_percent || 0),
-    routeDistance: Number(flight.route_distance || 0),
-    lastProviderUpdate: flight.last_position?.timestamp || flight.actual_off || flight.estimated_in || null,
+    latitude: Number.isFinite(Number(flight.lat)) ? Number(flight.lat) : null,
+    longitude: Number.isFinite(Number(flight.lon)) ? Number(flight.lon) : null,
+    altitude: Number.isFinite(Number(flight.alt)) ? Number(flight.alt) : null,
+    groundSpeed: Number.isFinite(Number(flight.gspeed)) ? Number(flight.gspeed) : null,
+    verticalSpeed: Number.isFinite(Number(flight.vspeed)) ? Number(flight.vspeed) : null,
+    track: Number.isFinite(Number(flight.track)) ? Number(flight.track) : null,
+    aircraftType: clean(flight.type),
+    registration: clean(flight.reg),
+    callsign: clean(flight.callsign),
+    lastProviderUpdate: parseIso(flight.timestamp || flight.last_seen || flight.datetime_landed || flight.datetime_takeoff),
     nextPollMinutes: nextPollMinutes(status),
+    providerDataExpiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
   };
 }
 
@@ -332,10 +390,16 @@ async function syncWatch(db, docSnap) {
   if (watch.enabled === false || !shouldPoll(watch)) return { id: watch.id, skipped: true };
 
   try {
-    const flight = await fetchFlight(watch.flightNumber, watch);
+    const flight = await fetchFlight(watch);
     if (!flight) {
-      await docSnap.ref.set({ syncError: "No matching flight found.", syncedAt: admin.firestore.FieldValue.serverTimestamp(), nextPollMinutes: 30 }, { merge: true });
-      return { id: watch.id, found: false };
+      await docSnap.ref.set({
+        status: "MONITORING",
+        provider: "flightradar24",
+        syncError: "Flight is not live yet. FR24 public API exposes the flight once it is being tracked.",
+        syncedAt: admin.firestore.FieldValue.serverTimestamp(),
+        nextPollMinutes: 15,
+      }, { merge: true });
+      return { id: watch.id, found: false, status: "MONITORING" };
     }
 
     const next = normalizeFlight(flight, watch);
