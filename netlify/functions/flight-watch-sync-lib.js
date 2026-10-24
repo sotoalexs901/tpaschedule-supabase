@@ -175,7 +175,47 @@ function nextPollMinutes(status) {
   return 60;
 }
 
+function tampaDateParts(date = new Date()) {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
+  const parts = Object.fromEntries(
+    formatter.formatToParts(date)
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, part.value])
+  );
+  return {
+    date: `${parts.year}-${parts.month}-${parts.day}`,
+    hour: Number(parts.hour || 0),
+    minute: Number(parts.minute || 0),
+  };
+}
+
+function isFlightWatchWindowOpen(watch) {
+  const flightDate = clean(watch.flightDate);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(flightDate)) return true;
+
+  const tampa = tampaDateParts();
+
+  // Future flights remain saved in Firebase but never call FR24 before their day.
+  if (flightDate > tampa.date) return false;
+
+  // Do not keep polling old flights once their scheduled day has passed.
+  if (flightDate < tampa.date) return false;
+
+  // On the flight date, FR24 polling starts at 07:00 Tampa local time.
+  return tampa.hour >= 7;
+}
+
 function shouldPoll(watch) {
+  if (!isFlightWatchWindowOpen(watch)) return false;
+
   const last = millis(watch.syncedAt);
   if (!last) return true;
   const interval = Number(watch.nextPollMinutes || nextPollMinutes(upper(watch.status)));
