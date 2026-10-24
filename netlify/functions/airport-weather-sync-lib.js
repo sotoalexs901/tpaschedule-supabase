@@ -28,6 +28,11 @@ const ICAO_OVERRIDES = {
 
 function clean(value) { return String(value ?? "").trim(); }
 function upper(value) { return clean(value).toUpperCase(); }
+function canonicalAirportCode(value) {
+  const code = upper(value);
+  if (code === "KTPA") return "TPA";
+  return code;
+}
 
 function getAdminApp() {
   if (admin.apps.length) return admin.app();
@@ -258,8 +263,38 @@ async function runAirportWeatherSync() {
     .map((doc) => ({ id: doc.id, ...doc.data() }))
     .filter((item) => item.enabled !== false && clean(item.code));
 
-  const airportsByCode = new Map(configured.map((item) => [upper(item.code), { ...item, code: upper(item.code) }]));
-  if (!airportsByCode.has("TPA")) airportsByCode.set("TPA", { code: "TPA", label: "Tampa International Airport", enabled: true });
+  const airportsByCode = new Map();
+  for (const item of configured) {
+    const code = canonicalAirportCode(item.code);
+    if (!code) continue;
+    const existing = airportsByCode.get(code);
+    airportsByCode.set(code, {
+      ...(existing || {}),
+      ...item,
+      code,
+      label: code === "TPA" ? "Tampa International Airport" : clean(item.label),
+    });
+  }
+
+  // TPA is the station home airport and is always monitored exactly once.
+  if (!airportsByCode.has("TPA")) {
+    airportsByCode.set("TPA", { code: "TPA", label: "Tampa International Airport", enabled: true });
+  }
+
+  // Remove stale weather-cache documents for airports no longer monitored, and
+  // remove legacy KTPA because TPA/KTPA represent the same airport in the UI.
+  const activeCodes = new Set(airportsByCode.keys());
+  const weatherSnapshot = await db.collection(WEATHER_COLLECTION).get();
+  const cleanup = [];
+  for (const weatherDoc of weatherSnapshot.docs) {
+    const data = weatherDoc.data() || {};
+    const rawCode = upper(data.code || weatherDoc.id);
+    const canonical = canonicalAirportCode(rawCode);
+    if (rawCode === "KTPA" || !activeCodes.has(canonical)) {
+      cleanup.push(weatherDoc.ref.delete());
+    }
+  }
+  if (cleanup.length) await Promise.all(cleanup);
 
   const results = [];
   for (const airport of airportsByCode.values()) {
