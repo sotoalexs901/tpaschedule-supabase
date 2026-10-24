@@ -317,7 +317,8 @@ function FlightCard({ flight, compact }) {
   const [trackError, setTrackError] = useState("");
   const badge = statusStyle(flight.status);
   const delayMinutes = Number(flight.delayMinutes || 0);
-  const eta = flight.eta || flight.estimatedIn || flight.estimated_in;
+  const std = flight.std || flight.scheduledOut || flight.scheduled_out;
+  const eta = flight.eta || flight.estimatedIn || flight.estimated_in || flight.scheduleEta;
   const sta = flight.sta || flight.scheduledIn || flight.scheduled_in;
   const atd = flight.atd || flight.actualOut || flight.actual_out;
 
@@ -380,19 +381,20 @@ function FlightCard({ flight, compact }) {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(3,minmax(0,1fr))",
+          gridTemplateColumns: compact ? "repeat(2,minmax(0,1fr))" : "repeat(4,minmax(0,1fr))",
           gap: 8,
           marginTop: 12,
         }}
       >
+        <Metric label="STD" value={formatTime(std)} />
         <Metric label="STA" value={formatTime(sta)} />
-        <Metric label="ETA" value={formatTime(eta)} emphasized />
         <Metric label="ATD" value={formatTime(atd)} />
+        <Metric label="ETA" value={formatTime(eta)} emphasized />
       </div>
 
       <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
         <span style={{ fontSize: 10.5, color: delayMinutes > 0 ? "#c2410c" : "#64748b", fontWeight: 800 }}>
-          {delayMinutes > 0 ? `Delay +${delayMinutes} min` : "No delay detected"}
+          {delayMinutes > 0 ? `Arrival delay +${delayMinutes} min` : (sta ? "On schedule / no arrival delay detected" : "Schedule pending")}
         </span>
         <span style={{ fontSize: 10, color: "#94a3b8" }}>
           Updated {formatTime(flight.lastProviderUpdate || flight.syncedAt)}
