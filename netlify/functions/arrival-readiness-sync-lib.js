@@ -47,20 +47,62 @@ function findGateLocation(locations, gate) {
   const target = normalizeGate(gate);
   return locations.find(l => l.active !== false && [l.id,l.locationId,l.name].some(v => normalizeGate(v) === target)) || null;
 }
-function rankAgent(agent, gate, gateLocation) {
+function locationMatches(location, value) {
+  const target=upper(value);
+  if(!target) return false;
+  return [location?.id,location?.locationId,location?.name].some(v=>upper(v)===target);
+}
+function nearestLocationForGps(gps, locations) {
+  let best=null;
+  for(const location of locations){
+    const d=distanceMeters(gps,location);
+    if(d===null) continue;
+    if(!best || d<best.distance) best={location,distance:d};
+  }
+  return best;
+}
+function routeAggregate(routes, originId, destinationId, mode="WCHR") {
+  const direct=routes.filter(r=>displayUpper(r.status)==="COMPLETED" && displayUpper(r.routeMode||"WCHR")===displayUpper(mode) && clean(r.originLocationId)===clean(originId) && clean(r.destinationLocationId)===clean(destinationId));
+  if(direct.length){
+    const seconds=Math.round(direct.reduce((sum,r)=>sum+Number(r.durationSeconds||0),0)/direct.length);
+    return {seconds,samples:direct.length,method:"recorded_route",confidence:direct.length>=3?"HIGH":"MEDIUM"};
+  }
+  const reverse=routes.filter(r=>displayUpper(r.status)==="COMPLETED" && displayUpper(r.routeMode||"WCHR")===displayUpper(mode) && clean(r.originLocationId)===clean(destinationId) && clean(r.destinationLocationId)===clean(originId));
+  if(reverse.length){
+    const seconds=Math.round(reverse.reduce((sum,r)=>sum+Number(r.durationSeconds||0),0)/reverse.length);
+    return {seconds,samples:reverse.length,method:"reverse_recorded_route",confidence:"MEDIUM"};
+  }
+  return null;
+}
+function rankAgent(agent, gate, gateLocation, locations, routes) {
   const loc = currentLocation(agent);
   const targetGate = gateNumber(gate), agentGate = gateNumber(loc);
-  let score = 999999, method = "reported", distance = null;
+  let score = 999999, method = "reported", distance = null, routeEtaSeconds = null, routeSamples = 0, routeConfidence = "UNKNOWN", routeOriginName = "";
   const gps = agent.live_gps || {};
   const age = Date.now() - millis(gps.recorded_at);
+  let originLocation = locations.find(location => locationMatches(location, loc)) || null;
+  if (!originLocation && agent.live_tracking_consent === true && age >= 0 && age <= 3*60000) {
+    originLocation = nearestLocationForGps(gps, locations)?.location || null;
+  }
+  if (originLocation && gateLocation) {
+    if (clean(originLocation.id) === clean(gateLocation.id)) {
+      score = 0; method = "same_location"; routeEtaSeconds = 0; routeConfidence = "HIGH"; routeOriginName = clean(originLocation.name);
+    } else {
+      const route = routeAggregate(routes, originLocation.id, gateLocation.id, "WCHR");
+      if (route && Number.isFinite(route.seconds) && route.seconds > 0) {
+        routeEtaSeconds = route.seconds; routeSamples = route.samples; routeConfidence = route.confidence; routeOriginName = clean(originLocation.name);
+        score = Math.min(score, route.seconds); method = route.method;
+      }
+    }
+  }
   if (agent.live_tracking_consent === true && age >= 0 && age <= 3*60000 && gateLocation) {
     distance = distanceMeters(gps, gateLocation);
-    if (distance !== null) { score = distance; method = "gps"; }
+    if (distance !== null && !Number.isFinite(routeEtaSeconds)) { score = Math.min(score, 5000 + distance); method = "gps"; }
   }
-  if (normalizeGate(loc) && normalizeGate(loc) === normalizeGate(gate)) { score = Math.min(score, 0); method = "same_gate"; }
-  else if (targetGate && agentGate) { score = Math.min(score, 250 + Math.abs(targetGate-agentGate)*110); method = method === "gps" ? method : "gate_proximity"; }
-  else if (/AIRSIDE\s*F/i.test(loc) || /^F\d+/i.test(loc)) { score = Math.min(score, 1800); }
-  return { score, method, distance };
+  if (normalizeGate(loc) && normalizeGate(loc) === normalizeGate(gate)) { score = Math.min(score, 0); method = "same_gate"; routeEtaSeconds = 0; routeConfidence = "HIGH"; }
+  else if (targetGate && agentGate && !Number.isFinite(routeEtaSeconds)) { score = Math.min(score, 10000 + Math.abs(targetGate-agentGate)*110); method = method === "gps" ? method : "gate_proximity"; }
+  else if ((/AIRSIDE\s*F/i.test(loc) || /^F\d+/i.test(loc)) && !Number.isFinite(routeEtaSeconds)) { score = Math.min(score, 15000); }
+  return { score, method, distance, routeEtaSeconds, routeSamples, routeConfidence, routeOriginName };
 }
 function makeCandidate(agent, ranked) {
   return {
@@ -72,6 +114,11 @@ function makeCandidate(agent, ranked) {
     location: currentLocation(agent) || "Location not reported",
     distance_meters: ranked.distance,
     proximity_method: ranked.method,
+    route_eta_seconds: ranked.routeEtaSeconds,
+    route_eta_minutes: Number.isFinite(ranked.routeEtaSeconds) ? Math.max(0, Math.round(ranked.routeEtaSeconds / 60)) : null,
+    route_samples: ranked.routeSamples || 0,
+    route_confidence: ranked.routeConfidence || "UNKNOWN",
+    route_origin_name: ranked.routeOriginName || "",
     score: ranked.score,
   };
 }
@@ -115,12 +162,13 @@ function alertCopy(stage, flightLabel, gate, minutes, count, candidates) {
 }
 async function runArrivalReadinessSync() {
   getAdminApp(); const db=admin.firestore(); const today=tampaDateKey();
-  const [flightsSnap, watchSnap, shiftsSnap, capSnap, locSnap, reportsSnap, readinessSnap] = await Promise.all([
+  const [flightsSnap, watchSnap, shiftsSnap, capSnap, locSnap, routeSnap, reportsSnap, readinessSnap] = await Promise.all([
     db.collection("wchr_daily_flights").where("service_date","==",today).get(),
     db.collection("flight_watchlist").where("enabled","==",true).get(),
     db.collection("wchr_agent_shifts").get(),
     db.collection("umnr_agent_capacity").get(),
     db.collection("operational_locations").get(),
+    db.collection("operational_routes").get(),
     db.collection("wch_reports").get(),
     db.collection("arrival_readiness").get(),
   ]);
@@ -128,6 +176,7 @@ async function runArrivalReadinessSync() {
   const shifts=shiftsSnap.docs.map(d=>({id:d.id,...d.data()}));
   const caps=new Map(capSnap.docs.map(d=>[d.id,Number(d.data()?.count||0)]));
   const locations=locSnap.docs.map(d=>({id:d.id,...d.data()})).filter(x=>x.active!==false);
+  const routes=routeSnap.docs.map(d=>({id:d.id,...d.data()}));
   const reports=reportsSnap.docs.map(d=>({id:d.id,...d.data()}));
   const old=new Map(readinessSnap.docs.map(d=>[d.id,{id:d.id,...d.data()}]));
   const managers=await usersByRole(db,["station_manager","duty_manager","supervisor"]);
@@ -138,9 +187,9 @@ async function runArrivalReadinessSync() {
     const watch=watches.find(w=>String(w.flightDate||"")===today && flightsMatch(flight,w));
     const etaMs=millis(watch?.eta || watch?.estimatedIn); const minutes=etaMs?Math.round((etaMs-Date.now())/60000):null;
     const gateLocation=findGateLocation(locations,flight.gate);
-    const eligible=shifts.filter(a=>isEligible(a,caps.get(a.id))).map(a=>({agent:a,rank:rankAgent(a,flight.gate,gateLocation)})).sort((a,b)=>a.rank.score-b.rank.score);
+    const eligible=shifts.filter(a=>isEligible(a,caps.get(a.id))).map(a=>({agent:a,rank:rankAgent(a,flight.gate,gateLocation,locations,routes)})).sort((a,b)=>a.rank.score-b.rank.score);
     const candidates=eligible.slice(0,5).map(x=>makeCandidate(x.agent,x.rank));
-    const near=candidates.filter(x=>x.score<=900).length;
+    const near=candidates.filter(x => Number.isFinite(Number(x.route_eta_seconds)) ? Number(x.route_eta_seconds) <= 5*60 : (Number.isFinite(Number(x.distance_meters)) && Number(x.distance_meters) <= 900) || ["same_gate","same_location"].includes(x.proximity_method)).length;
     const serviceCount=reports.filter(r=>String(r.flight_date||r.service_date||"")===today && flightsMatch(flight,r) && !["CANCELLED","COMPLETED","DELIVERED"].includes(displayUpper(r.status))).length;
     const prev=old.get(flight.id)||{};
     const status=stageFor(minutes,eligible.length,near,prev.staging_confirmed===true,watch?.status);
