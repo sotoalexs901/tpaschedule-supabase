@@ -314,8 +314,11 @@ function normalizeAeroDataBoxSchedule(candidate, watch) {
   const providerArrived = providerStatus.includes("ARRIV") || providerStatus.includes("LAND");
   const providerDeparted = providerStatus.includes("DEPART") || providerStatus.includes("AIRBORNE");
   const departureRunwayTime = movementTime(departure, "runwayTime");
+  // OUT / blocks-out must be a true gate departure time. Do not fall back to
+  // revisedTime here because revisedTime may be an updated estimate and can
+  // collapse OUT and OFF/AIRBORNE into the same timestamp.
   const departureGateTime = providerDeparted
-    ? (movementTime(departure, "actualTime") || movementTime(departure, "revisedTime"))
+    ? movementTime(departure, "actualTime")
     : null;
   const arrivalRunwayTime = movementTime(arrival, "runwayTime");
   // AeroDataBox renamed actualTime to revisedTime; actualTime is retained as a
@@ -784,7 +787,14 @@ function normalizeFlight(result, watch) {
   const fr24Takeoff = parseIso(flight.datetime_takeoff);
   const atd = fr24Takeoff || parseIso(watch.actualOff) || parseIso(watch.atd);
   const ata = parseIso(flight.datetime_landed);
-  const actualOut = parseIso(watch.actualOut);
+  const storedActualOut = parseIso(watch.actualOut);
+  // OUT means brake release / blocks-out. Legacy records may have copied the
+  // takeoff timestamp into actualOut. If OUT equals OFF, reject it as an OUT
+  // value so Gate Checklist does not report takeoff as brake release.
+  const actualOut =
+    storedActualOut && atd && storedActualOut.getTime() === atd.getTime()
+      ? null
+      : storedActualOut;
   const actualOn = ata || parseIso(watch.actualOn);
   const actualIn = parseIso(watch.actualIn);
   const manualSta = parseIso(watch.sta || watch.scheduledArrival || watch.scheduledIn);
@@ -813,7 +823,7 @@ function normalizeFlight(result, watch) {
     estimatedOut: null,
     actualOut: actualOut || null,
     actualOff: atd || null,
-    actualOutSource: actualOut ? (watch.actualOutSource || "AeroDataBox gate time") : "",
+    actualOutSource: actualOut ? (watch.actualOutSource || "AeroDataBox gate / brake-release time") : "",
     actualOffSource: atd ? (fr24Takeoff ? "Flightradar24 datetime_takeoff" : (watch.actualOffSource || "AeroDataBox runwayTime")) : "",
     actualOn: actualOn || null,
     actualIn: actualIn || null,
