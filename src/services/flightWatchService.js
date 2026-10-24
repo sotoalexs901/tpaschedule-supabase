@@ -84,6 +84,7 @@ export async function createFlightWatch(payload, user) {
     flightDate: clean(payload.flightDate),
     origin: upper(payload.origin),
     destination: upper(payload.destination || "TPA"),
+    linkedInboundFlightNumber: upper(payload.linkedInboundFlightNumber || ""),
     targetDepartments: targetDepartments.length ? targetDepartments : ["ALL"],
     notifyEvents: {
       ...DEFAULT_FLIGHT_EVENTS,
@@ -139,38 +140,9 @@ export async function deleteMonitoredAirport(id) {
 export function normalizeDepartment(value) {
   return clean(value)
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/ticket counter/g, "")
     .replace(/\s+/g, " ")
     .trim();
-}
-
-function departmentAliases(value) {
-  const text = normalizeDepartment(value);
-  const aliases = new Set();
-  if (!text) return aliases;
-
-  aliases.add(text);
-  if (/\bwchr\b|wheelchair/.test(text)) aliases.add("wchr");
-  if (/avianca|\bav\b/.test(text)) { aliases.add("av"); aliases.add("av ticket counter"); }
-  if (/sun country|\bsy\b/.test(text)) { aliases.add("sy"); aliases.add("sy ticket counter"); }
-  if (/world atlantic|\bwl\b/.test(text)) { aliases.add("wl"); aliases.add("world atlantic"); }
-  if (/aa bso|\bbso\b|american airlines bso/.test(text)) aliases.add("aa bso");
-  if (/dl cabin|delta cabin|cabin service/.test(text)) aliases.add("dl cabin service");
-
-  return aliases;
-}
-
-function userDepartmentAliases(user) {
-  const aliases = new Set();
-  [
-    user?.department,
-    user?.departmentName,
-    user?.airline,
-    user?.airlineAccount,
-    user?.account,
-    user?.position,
-  ].forEach((value) => departmentAliases(value).forEach((item) => aliases.add(item)));
-  return aliases;
 }
 
 export function flightVisibleToUser(flight, user) {
@@ -181,14 +153,11 @@ export function flightVisibleToUser(flight, user) {
   if (!targets.length || targets.some((item) => upper(item) === "ALL")) return true;
   if (["station_manager", "duty_manager"].includes(user?.role)) return true;
 
-  const userAliases = userDepartmentAliases(user);
-  if (!userAliases.size) return false;
+  const userDepartment = normalizeDepartment(user?.department);
+  if (!userDepartment) return false;
 
   return targets.some((target) => {
-    const targetAliases = departmentAliases(target);
-    for (const candidate of targetAliases) {
-      if (userAliases.has(candidate)) return true;
-    }
-    return false;
+    const normalized = normalizeDepartment(target);
+    return normalized === userDepartment || normalized.includes(userDepartment) || userDepartment.includes(normalized);
   });
 }
