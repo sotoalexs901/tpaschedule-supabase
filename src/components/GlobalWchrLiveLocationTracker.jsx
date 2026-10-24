@@ -17,6 +17,8 @@ import { matchOperationalLocation } from "../utils/operationalGeofence.js";
 import { cleanText, getEmployeeIdentifier, safeUpper } from "../utils/wchrOperations.js";
 
 const ACTIVE_SHIFT_STATUS = "ACTIVE";
+const BREAK_AVAILABILITY = "BREAK";
+const UNAVAILABLE_AVAILABILITY = "UNAVAILABLE";
 const WCHR_PAGE_PATH = "/wchr";
 
 function normalizeText(value) {
@@ -127,10 +129,14 @@ export default function GlobalWchrLiveLocationTracker() {
     // Suspend the global watcher there to avoid duplicate browser geolocation watchers.
     if (onDedicatedWchrPage) return undefined;
 
+    const availability = safeUpper(shift?.availability_status);
+    const persistentConsent = employee?.live_tracking_consent === true;
+
     if (
       !agentId ||
       safeUpper(shift?.status) !== ACTIVE_SHIFT_STATUS ||
-      shift?.live_tracking_consent !== true
+      !persistentConsent ||
+      [BREAK_AVAILABILITY, UNAVAILABLE_AVAILABILITY].includes(availability)
     ) {
       return undefined;
     }
@@ -223,8 +229,9 @@ export default function GlobalWchrLiveLocationTracker() {
   }, [
     agentId,
     shift?.status,
-    shift?.live_tracking_consent,
+    shift?.availability_status,
     shift?.active_report_id,
+    employee?.live_tracking_consent,
     zones,
     onDedicatedWchrPage,
     location.pathname,
