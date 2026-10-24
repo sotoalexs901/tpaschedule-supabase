@@ -828,6 +828,13 @@ export default function AppLayout() {
 
     updateUserPresence(user, {
       currentPage: location.pathname,
+      ...(user?.role === "duty_manager"
+        ? {
+            smartDutyAvailable: true,
+            smartDutyStatus: "AVAILABLE",
+            smartDutyLastSeen: new Date().toISOString(),
+          }
+        : {}),
     }).catch((err) =>
       console.error("Error updating user presence:", err)
     );
@@ -845,12 +852,32 @@ export default function AppLayout() {
     if (!user?.id) return undefined;
 
     return subscribeToBrowserVisibility({
+      // Smart Intelligence availability is session-based.
+      // Do not mark a Duty Manager offline simply because the app is backgrounded.
       onInactive: () => {
+        if (user?.role === "duty_manager") {
+          updateUserPresence(user, {
+            currentPage: location.pathname,
+            smartDutyAvailable: true,
+            smartDutyStatus: "AVAILABLE",
+            smartDutyBackgroundedAt: new Date().toISOString(),
+            smartDutyLastSeen: new Date().toISOString(),
+          }).catch(() => {});
+          return;
+        }
+
         markUserOffline(user).catch(() => {});
       },
       onActive: () => {
         updateUserPresence(user, {
           currentPage: location.pathname,
+          ...(user?.role === "duty_manager"
+            ? {
+                smartDutyAvailable: true,
+                smartDutyStatus: "AVAILABLE",
+                smartDutyLastSeen: new Date().toISOString(),
+              }
+            : {}),
         }).catch(() => {});
       },
     });
@@ -929,6 +956,13 @@ export default function AppLayout() {
       updateUserPresence(user, {
         currentPage: location.pathname,
         lastActivityAt: new Date(now).toISOString(),
+        ...(user?.role === "duty_manager"
+          ? {
+              smartDutyAvailable: true,
+              smartDutyStatus: "AVAILABLE",
+              smartDutyLastSeen: new Date(now).toISOString(),
+            }
+          : {}),
       }).catch((err) =>
         console.error("Error updating activity heartbeat:", err)
       );
@@ -1620,6 +1654,12 @@ export default function AppLayout() {
   return (
     <div className={`aerohub-shell ${sidebarCollapsed ? "aerohub-shell--collapsed" : ""} ${menuOpen ? "aerohub-shell--menu-open" : ""}`}>
       <GlobalWchrLiveLocationTracker />
+      {isManagementUser && (
+        <SmartIntelligenceFloatingAssistant
+          alertCount={operationalAlerts}
+          onOpen={() => navigate("/dashboard")}
+        />
+      )}
       {menuOpen && <button className="aerohub-mobile-backdrop" aria-label="Close navigation" onClick={() => setMenuOpen(false)} />}
       <aside id="aerohub-primary-navigation" className={`aerohub-sidebar ${menuOpen ? "aerohub-sidebar--open" : ""}`} aria-label="Main navigation">
         <div className="aerohub-sidebar-brand">
@@ -1674,7 +1714,6 @@ export default function AppLayout() {
             </div>
           </div>
           <div className="aerohub-mobile-stationbar__actions">
-            {isManagementUser && <OperationalAlertBell value={operationalAlerts} onClick={() => navigate("/dashboard")} />}
             {isManagementUser && <StatusPill label="WCHR" value={wchrFollowUps} active={wchrFollowUps > 0} onClick={() => navigate("/wchr")} />}
             <StatusPill label="Messages" value={unreadMessages} active={unreadMessages > 0} onClick={() => navigate("/messages")} />
             <StatusPill label="Notifications" value={unreadNotifications} active={unreadNotifications > 0} onClick={() => navigate("/notifications")} />
@@ -1692,7 +1731,6 @@ export default function AppLayout() {
             <div className="aerohub-station-weather" title={weatherError ? "Live weather currently unavailable" : "Current conditions near TPA, not a flight delay advisory"}><span aria-hidden="true">{stationWeather ? ([0,1].includes(stationWeather.weather_code) ? "☀️" : [2,3].includes(stationWeather.weather_code) ? "☁️" : [95,96,99].includes(stationWeather.weather_code) ? "⛈️" : "🌦️") : "🌤️"}</span><div><strong>{stationWeather ? `${Math.round(stationWeather.temperature_2m)}°F` : "—"}</strong><small>{stationWeather ? "TPA weather" : "Weather unavailable"}</small></div></div>
           </div>
           <div className="aerohub-topbar-actions">
-            {isManagementUser && <OperationalAlertBell value={operationalAlerts} onClick={() => navigate("/dashboard")} />}
             {isManagementUser && <StatusPill label="WCHR" value={wchrFollowUps} active={wchrFollowUps > 0} onClick={() => navigate("/wchr")} />}
             <StatusPill label="Messages" value={unreadMessages} active={unreadMessages > 0} onClick={() => navigate("/messages")} />
             <StatusPill label="Notifications" value={unreadNotifications} active={unreadNotifications > 0} onClick={() => navigate("/notifications")} />
@@ -1769,6 +1807,139 @@ export default function AppLayout() {
 
         <main className="aerohub-main"><Outlet /></main>
       </div>
+    </div>
+  );
+}
+
+function SmartIntelligenceFloatingAssistant({ alertCount = 0, onOpen }) {
+  const [open, setOpen] = React.useState(false);
+  const count = Math.max(0, Number(alertCount || 0));
+  const hasAlerts = count > 0;
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        right: 18,
+        bottom: 18,
+        zIndex: 9500,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "flex-end",
+        gap: 8,
+        pointerEvents: "none",
+      }}
+    >
+      {open && (
+        <div
+          style={{
+            width: 270,
+            maxWidth: "calc(100vw - 36px)",
+            background: "#ffffff",
+            border: hasAlerts ? "1px solid #fecaca" : "1px solid #dbeafe",
+            borderRadius: 18,
+            boxShadow: "0 18px 45px rgba(15,23,42,.18)",
+            padding: 14,
+            pointerEvents: "auto",
+          }}
+        >
+          <div style={{ fontWeight: 900, color: "#0f172a", fontSize: 14 }}>
+            {hasAlerts ? "Let’s take a look! 👀" : "No worries! I’ve got you covered."}
+          </div>
+          <div style={{ marginTop: 5, color: "#64748b", fontSize: 12.5, lineHeight: 1.45 }}>
+            {hasAlerts
+              ? `${count} item${count === 1 ? "" : "s"} need your attention.`
+              : "I’ll let you know if something needs your attention."}
+          </div>
+          {hasAlerts && (
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                onOpen?.();
+              }}
+              style={{
+                marginTop: 11,
+                width: "100%",
+                border: "none",
+                borderRadius: 11,
+                padding: "9px 11px",
+                background: "#0f4c81",
+                color: "#fff",
+                fontWeight: 850,
+                cursor: "pointer",
+              }}
+            >
+              View Smart Alerts
+            </button>
+          )}
+        </div>
+      )}
+
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        title="Smart Intelligence"
+        aria-label={hasAlerts ? `Smart Intelligence: ${count} pending alert${count === 1 ? "" : "s"}` : "Smart Intelligence: no pending alerts"}
+        style={{
+          width: 50,
+          height: 50,
+          borderRadius: "50%",
+          border: hasAlerts ? "2px solid #fecaca" : "2px solid #bfdbfe",
+          background: "linear-gradient(145deg,#ffffff,#eaf4ff)",
+          boxShadow: "0 10px 26px rgba(15,76,129,.24)",
+          display: "grid",
+          placeItems: "center",
+          cursor: "pointer",
+          pointerEvents: "auto",
+          position: "relative",
+          padding: 0,
+        }}
+      >
+        <span
+          aria-hidden="true"
+          style={{
+            width: 30,
+            height: 25,
+            borderRadius: 10,
+            background: "#0f172a",
+            border: "3px solid #dbeafe",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 4,
+            boxSizing: "border-box",
+            position: "relative",
+          }}
+        >
+          <i style={{ width: 5, height: 5, borderRadius: "50%", background: "#67e8f9", display: "block" }} />
+          <i style={{ width: 5, height: 5, borderRadius: "50%", background: "#67e8f9", display: "block" }} />
+        </span>
+        {hasAlerts && (
+          <span
+            style={{
+              position: "absolute",
+              top: -5,
+              right: -5,
+              minWidth: 20,
+              height: 20,
+              padding: "0 5px",
+              borderRadius: 999,
+              background: "#ef4444",
+              color: "#fff",
+              border: "2px solid #fff",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 10,
+              fontWeight: 900,
+              boxSizing: "border-box",
+            }}
+          >
+            {count > 99 ? "99+" : count}
+          </span>
+        )}
+      </button>
     </div>
   );
 }
