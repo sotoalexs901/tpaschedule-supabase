@@ -8,10 +8,27 @@ export function subscribeAirportWeather(callback, onError) {
   return onSnapshot(
     q,
     (snapshot) => {
-      const rows = snapshot.docs
+      const rawRows = snapshot.docs
         .map((item) => ({ id: item.id, ...item.data() }))
         .filter((item) => item.enabled !== false);
-      callback(rows);
+
+      // Defensive de-duplication: TPA and KTPA represent the same station.
+      const byAirport = new Map();
+      for (const row of rawRows) {
+        const rawCode = String(row.code || row.id || "").trim().toUpperCase();
+        const canonicalCode = rawCode === "KTPA" ? "TPA" : rawCode;
+        const normalized = {
+          ...row,
+          code: canonicalCode,
+          icao: row.icao || (canonicalCode === "TPA" ? "KTPA" : row.icao),
+          label: canonicalCode === "TPA" ? "Tampa International Airport" : row.label,
+        };
+
+        const existing = byAirport.get(canonicalCode);
+        // Prefer the canonical TPA document over the legacy KTPA document.
+        if (!existing || rawCode === canonicalCode) byAirport.set(canonicalCode, normalized);
+      }
+      callback([...byAirport.values()]);
     },
     onError
   );
