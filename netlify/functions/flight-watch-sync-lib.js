@@ -329,29 +329,52 @@ function normalizeAeroDataBoxSchedule(candidate, watch) {
   };
 }
 
-function shouldSyncSchedule(watch) {
-  if (watch.trackingComplete === true || TERMINAL_STATUSES.has(upper(watch.status))) return false;
-  const date = clean(watch.flightDate);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return false;
-  const tampa = tampaDateParts();
-  if (date < tampa.date) return false;
-
-  const last = millis(watch.scheduleSyncedAt);
-  if (!last) return true;
-
-  // IMPORTANT: a previous lookup that returned no usable STD/STA is NOT a successful
-  // schedule sync. Retry those flights frequently so a temporary no-match does not
-  // suppress AeroDataBox lookups for 3-24 hours.
-  const hasSchedule = Boolean(watch.std || watch.sta || watch.scheduledOut || watch.scheduledIn);
-  const hadScheduleError = Boolean(clean(watch.scheduleSyncError));
-  if (!hasSchedule || hadScheduleError) {
-    return Date.now() - last >= 15 * 60 * 1000 - 15000;
+function scheduleSyncDecision(watch) {
+  const status = upper(watch.status);
+  if (watch.trackingComplete === true || TERMINAL_STATUSES.has(status)) {
+    return { due: false, reason: "terminal-or-complete", retryInMinutes: null };
   }
 
-  // Once schedule data exists, refresh conservatively to save API units.
+  const date = clean(watch.flightDate);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return { due: false, reason: "invalid-flight-date", retryInMinutes: null };
+  }
+
+  const tampa = tampaDateParts();
+  if (date < tampa.date) {
+    return { due: false, reason: "past-flight-date", retryInMinutes: null };
+  }
+
+  const last = millis(watch.scheduleSyncedAt);
+  if (!last) return { due: true, reason: "never-attempted", retryInMinutes: 0 };
+
+  const hasSchedule = Boolean(watch.std || watch.sta || watch.scheduledOut || watch.scheduledIn);
+  const hadScheduleError = Boolean(clean(watch.scheduleSyncError));
+  const ageMs = Date.now() - last;
+
+  if (!hasSchedule || hadScheduleError) {
+    const intervalMs = 15 * 60 * 1000;
+    const remainingMs = Math.max(0, intervalMs - ageMs);
+    return {
+      due: ageMs >= intervalMs - 15000,
+      reason: ageMs >= intervalMs - 15000 ? "retry-missing-schedule" : "retry-not-due-yet",
+      retryInMinutes: Math.ceil(remainingMs / 60000),
+    };
+  }
+
   const sameDay = date === tampa.date;
   const intervalHours = sameDay ? 3 : 24;
-  return Date.now() - last >= intervalHours * 60 * 60 * 1000;
+  const intervalMs = intervalHours * 60 * 60 * 1000;
+  const remainingMs = Math.max(0, intervalMs - ageMs);
+  return {
+    due: ageMs >= intervalMs - 15000,
+    reason: ageMs >= intervalMs - 15000 ? "refresh-existing-schedule" : "schedule-cache-valid",
+    retryInMinutes: Math.ceil(remainingMs / 60000),
+  };
+}
+
+function shouldSyncSchedule(watch) {
+  return scheduleSyncDecision(watch).due;
 }
 
 async function fr24Get(path, params = {}) {
@@ -727,20 +750,33 @@ function normalizeFlight(result, watch) {
 
 async function syncWatch(db, docSnap) {
   let watch = { id: docSnap.id, ...(docSnap.data() || {}) };
-  let scheduleDebug = null;
-  if (watch.enabled === false) return { id: watch.id, skipped: true };
+  const initialScheduleDecision = scheduleSyncDecision(watch);
+  let scheduleDebug = {
+    attempted: false,
+    decision: initialScheduleDecision.reason,
+    retryInMinutes: initialScheduleDecision.retryInMinutes,
+    flightNumber: watch.flightNumber || "",
+    flightDate: watch.flightDate || "",
+    origin: watch.origin || "",
+    destination: watch.destination || "",
+    existingStd: watch.std || watch.scheduledOut || null,
+    existingSta: watch.sta || watch.scheduledIn || null,
+    previousError: clean(watch.scheduleSyncError),
+    previousRows: Number(watch.scheduleReturnedRows || 0),
+    previousDiagnostic: watch.scheduleMatchDiagnostic || null,
+  };
+  if (watch.enabled === false) return { id: watch.id, skipped: true, scheduleDebug };
 
   // Schedule enrichment is independent from FR24 live polling. Future flights can
   // receive STD/STA without spending FR24 credits before their flight day.
-  if (shouldSyncSchedule(watch)) {
+  if (initialScheduleDecision.due) {
     try {
       const scheduleResult = await fetchAeroDataBoxSchedule(watch);
       const scheduleCandidate = scheduleResult?.candidate || null;
       scheduleDebug = {
-        flightNumber: watch.flightNumber || "",
-        flightDate: watch.flightDate || "",
-        origin: watch.origin || "",
-        destination: watch.destination || "",
+        ...scheduleDebug,
+        attempted: true,
+        decision: "attempted",
         rows: Number(scheduleResult?.rows || 0),
         diagnostic: scheduleResult?.diagnostic || null,
       };
@@ -770,10 +806,9 @@ async function syncWatch(db, docSnap) {
       }
     } catch (error) {
       scheduleDebug = {
-        flightNumber: watch.flightNumber || "",
-        flightDate: watch.flightDate || "",
-        origin: watch.origin || "",
-        destination: watch.destination || "",
+        ...scheduleDebug,
+        attempted: true,
+        decision: "request-error",
         error: clean(error?.message || error).slice(0, 500),
       };
       console.error(`AeroDataBox schedule sync failed for ${watch.flightNumber}:`, error);
