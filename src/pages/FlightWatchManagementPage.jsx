@@ -214,7 +214,7 @@ export default function FlightWatchManagementPage() {
       </section>
 
       <div style={{ marginTop: 12, color: "#64748b", fontSize: 10.5 }}>
-        Live provider data requires the Netlify environment variable <strong>FLIGHTAWARE_API_KEY</strong>. AeroStation Hub will keep the key server-side.
+        Live provider data uses Flightradar24 and requires the Netlify environment variable <strong>FLIGHTRADAR24_API_TOKEN</strong>. AeroStation Hub will keep the key server-side.
       </div>
     </div>
   );
