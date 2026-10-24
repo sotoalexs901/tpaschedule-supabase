@@ -1,6 +1,7 @@
 const admin = require("firebase-admin");
 
 const FR24_API_BASE = "https://fr24api.flightradar24.com/api";
+const AERODATABOX_API_BASE = "https://prod.api.market/api/v1/aedbx/aerodatabox";
 const ACTIVE_STATUSES = new Set(["AIRBORNE", "APPROACHING"]);
 const TERMINAL_STATUSES = new Set(["LANDED", "ARRIVED", "COMPLETED", "CANCELLED"]);
 
@@ -84,6 +85,117 @@ function fr24Headers() {
     Accept: "application/json",
     "Accept-Version": "v1",
   };
+}
+
+
+function aeroDataBoxHeaders() {
+  const key = clean(process.env.AERODATABOX_API_KEY);
+  if (!key) throw new Error("AERODATABOX_API_KEY is not configured.");
+  return {
+    Accept: "application/json",
+    "x-api-market-key": key,
+  };
+}
+
+async function aeroDataBoxGet(path, params = {}) {
+  const url = new URL(`${AERODATABOX_API_BASE}${path}`);
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== "") url.searchParams.set(key, String(value));
+  });
+  const response = await fetch(url, { headers: aeroDataBoxHeaders() });
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`AeroDataBox ${response.status}: ${body.slice(0, 220)}`);
+  }
+  return response.json();
+}
+
+function movementAirportCode(movement) {
+  return airportCode(movement?.airport || movement?.airport?.iata || movement?.airport?.icao);
+}
+
+function movementTime(movement, field) {
+  const value = movement?.[field];
+  if (!value) return null;
+  if (typeof value === "string") return parseIso(value);
+  return parseIso(value.utc || value.local || null);
+}
+
+function scheduleRouteScore(candidate, watch) {
+  let score = 0;
+  const wanted = upper(watch.flightNumber).replace(/\s+/g, "");
+  const number = upper(candidate?.number).replace(/\s+/g, "");
+  if (number === wanted) score += 300;
+  const origin = movementAirportCode(candidate?.departure);
+  const destination = movementAirportCode(candidate?.arrival);
+  if (upper(watch.origin) && origin === upper(watch.origin)) score += 100;
+  if (upper(watch.destination || "TPA") && destination === upper(watch.destination || "TPA")) score += 100;
+  return score;
+}
+
+async function fetchAeroDataBoxSchedule(watch) {
+  const flightNumber = encodeURIComponent(upper(watch.flightNumber).replace(/\s+/g, ""));
+  const date = clean(watch.flightDate);
+  if (!flightNumber || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+
+  const data = await aeroDataBoxGet(`/flights/number/${flightNumber}/${date}`, {
+    withAircraftImage: false,
+    withLocation: false,
+    dateLocalRole: "Both",
+  });
+  const rows = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : [];
+  if (!rows.length) return null;
+  return rows
+    .map((candidate) => ({ candidate, score: scheduleRouteScore(candidate, watch) }))
+    .sort((a, b) => b.score - a.score)[0]?.candidate || null;
+}
+
+function normalizeAeroDataBoxSchedule(candidate, watch) {
+  if (!candidate) return {};
+  const departure = candidate.departure || {};
+  const arrival = candidate.arrival || {};
+  const std = movementTime(departure, "scheduledTime");
+  const sta = movementTime(arrival, "scheduledTime");
+  const etd = movementTime(departure, "revisedTime") || movementTime(departure, "predictedTime");
+  const eta = movementTime(arrival, "revisedTime") || movementTime(arrival, "predictedTime");
+  const providerStatus = upper(candidate.status);
+  let scheduleStatus = "SCHEDULED";
+  if (providerStatus.includes("CANCEL")) scheduleStatus = "CANCELLED";
+  else if (providerStatus.includes("DELAY")) scheduleStatus = "DELAYED";
+  else if (providerStatus.includes("DIVERT")) scheduleStatus = "DIVERTED";
+
+  return {
+    std: std || null,
+    sta: sta || null,
+    scheduledOut: std || null,
+    scheduledIn: sta || null,
+    etd: etd || null,
+    estimatedOut: etd || null,
+    scheduleEta: eta || null,
+    origin: movementAirportCode(departure) || upper(watch.origin),
+    destination: movementAirportCode(arrival) || upper(watch.destination || "TPA"),
+    departureTerminal: clean(departure.terminal),
+    departureGate: clean(departure.gate),
+    arrivalTerminal: clean(arrival.terminal),
+    arrivalGate: clean(arrival.gate),
+    scheduleProviderStatus: clean(candidate.status),
+    scheduleStatus,
+    scheduleProvider: "aerodatabox",
+    scheduleSyncedAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+}
+
+function shouldSyncSchedule(watch) {
+  if (watch.trackingComplete === true || TERMINAL_STATUSES.has(upper(watch.status))) return false;
+  const date = clean(watch.flightDate);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return false;
+  const tampa = tampaDateParts();
+  if (date < tampa.date) return false;
+  const last = millis(watch.scheduleSyncedAt);
+  if (!last) return true;
+  const sameDay = date === tampa.date;
+  const intervalHours = sameDay ? 3 : 24;
+  return Date.now() - last >= intervalHours * 60 * 60 * 1000;
 }
 
 async function fr24Get(path, params = {}) {
@@ -458,30 +570,73 @@ function normalizeFlight(result, watch) {
 }
 
 async function syncWatch(db, docSnap) {
-  const watch = { id: docSnap.id, ...(docSnap.data() || {}) };
-  if (watch.enabled === false || !shouldPoll(watch)) return { id: watch.id, skipped: true };
+  let watch = { id: docSnap.id, ...(docSnap.data() || {}) };
+  if (watch.enabled === false) return { id: watch.id, skipped: true };
+
+  // Schedule enrichment is independent from FR24 live polling. Future flights can
+  // receive STD/STA without spending FR24 credits before their flight day.
+  if (shouldSyncSchedule(watch)) {
+    try {
+      const scheduleCandidate = await fetchAeroDataBoxSchedule(watch);
+      const schedule = normalizeAeroDataBoxSchedule(scheduleCandidate, watch);
+      if (Object.keys(schedule).length) {
+        const previousStatus = upper(watch.status);
+        const scheduleStatus = upper(schedule.scheduleStatus);
+        const statusPatch = ["CANCELLED", "DELAYED", "DIVERTED"].includes(scheduleStatus) && !ACTIVE_STATUSES.has(previousStatus)
+          ? { status: scheduleStatus }
+          : (!previousStatus || previousStatus === "MONITORING" ? { status: "SCHEDULED" } : {});
+        await docSnap.ref.set({
+          ...schedule,
+          ...statusPatch,
+          scheduleSyncError: "",
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
+        watch = { ...watch, ...schedule, ...statusPatch };
+      } else {
+        await docSnap.ref.set({
+          scheduleSyncedAt: admin.firestore.FieldValue.serverTimestamp(),
+          scheduleSyncError: "No AeroDataBox schedule match found for this flight/date.",
+        }, { merge: true });
+      }
+    } catch (error) {
+      console.error(`AeroDataBox schedule sync failed for ${watch.flightNumber}:`, error);
+      await docSnap.ref.set({
+        scheduleSyncedAt: admin.firestore.FieldValue.serverTimestamp(),
+        scheduleSyncError: clean(error?.message || error).slice(0, 500),
+      }, { merge: true });
+    }
+  }
+
+  if (!shouldPoll(watch)) {
+    return { id: watch.id, skipped: true, scheduleOnly: true, std: watch.std || null, sta: watch.sta || null };
+  }
 
   try {
     const flight = await fetchFlight(watch);
     if (!flight) {
       await docSnap.ref.set({
-        status: "MONITORING",
+        status: upper(watch.status) === "SCHEDULED" ? "SCHEDULED" : "MONITORING",
         provider: "flightradar24",
         syncError: "Flight is not live yet. FR24 public API exposes the flight once it is being tracked.",
         syncedAt: admin.firestore.FieldValue.serverTimestamp(),
         nextPollMinutes: 15,
       }, { merge: true });
-      return { id: watch.id, found: false, status: "MONITORING" };
+      return { id: watch.id, found: false, status: upper(watch.status) === "SCHEDULED" ? "SCHEDULED" : "MONITORING" };
     }
 
     const next = normalizeFlight(flight, watch);
     const events = buildEvents(watch, next, watch);
     const approachingNotified = watch.approachingNotified || events.some((event) => event.type === "approaching");
-
     const terminal = TERMINAL_STATUSES.has(upper(next.status));
 
     await docSnap.ref.set({
       ...next,
+      scheduleProvider: watch.scheduleProvider || "aerodatabox",
+      scheduleProviderStatus: watch.scheduleProviderStatus || "",
+      departureTerminal: watch.departureTerminal || "",
+      departureGate: watch.departureGate || "",
+      arrivalTerminal: watch.arrivalTerminal || "",
+      arrivalGate: watch.arrivalGate || "",
       approachingNotified,
       trackingComplete: terminal,
       ...(terminal ? { trackingCompletedAt: admin.firestore.FieldValue.serverTimestamp() } : {}),
@@ -494,7 +649,7 @@ async function syncWatch(db, docSnap) {
       await notifyEvent(db, watch, event, next);
     }
 
-    return { id: watch.id, status: next.status, events: events.map((event) => event.type) };
+    return { id: watch.id, status: next.status, events: events.map((event) => event.type), std: next.std, sta: next.sta };
   } catch (error) {
     console.error(`Flight Watch sync failed for ${watch.flightNumber}:`, error);
     await docSnap.ref.set({
