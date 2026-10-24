@@ -77,6 +77,142 @@ function isDutyManagerFresh(user, nowMs = Date.now()) {
   return ageMinutes >= -5 && ageMinutes <= DUTY_FRESH_MINUTES;
 }
 
+
+const DAY_KEYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+
+function tampaDayKey(date = new Date()) {
+  const weekday = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    weekday: "short",
+  }).format(date).toLowerCase();
+  return weekday.slice(0, 3);
+}
+
+function tampaMonthDay(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const map = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${Number(map.month)}/${Number(map.day)}`;
+}
+
+function normalizeAccount(value) {
+  const raw = upper(value).replace(/[^A-Z0-9]+/g, " ").trim();
+  if (!raw) return "";
+  if (raw === "SY" || raw.includes("SUN COUNTRY")) return "SY";
+  if (raw === "WL" || raw === "WAL" || raw.includes("WORLD ATLANTIC")) return "WL";
+  if (raw === "AV" || raw.includes("AVIANCA")) return "AV";
+  if (raw.includes("AA BSO") || raw === "BSO") return "AA BSO";
+  if (raw.includes("DL CABIN") || raw.includes("CABIN SERVICE") || raw === "DL" || raw.includes("DELTA")) return "DL CABIN SERVICE";
+  if (raw.includes("WCHR") || raw.includes("WHEELCHAIR")) return "WCHR";
+  return raw;
+}
+
+function scheduleMatchesRule(schedule, rule) {
+  const wanted = normalizeAccount(rule.department);
+  const candidates = [
+    schedule?.department,
+    schedule?.airline,
+    schedule?.airlineDisplayName,
+  ].map(normalizeAccount).filter(Boolean);
+  return Boolean(wanted && candidates.includes(wanted));
+}
+
+function shiftIsWorking(shift) {
+  if (!shift || typeof shift !== "object") return false;
+  const start = upper(shift.start);
+  if (!start || start === "OFF") return false;
+  return true;
+}
+
+function scheduleCoversToday(schedule, now = new Date()) {
+  const dayKey = tampaDayKey(now);
+  const expectedMonthDay = tampaMonthDay(now);
+  const dayLabel = clean(schedule?.days?.[dayKey]).replace(/^0+/, "").replace(/\/0/g, "/");
+  if (dayLabel) {
+    const normalized = dayLabel.split("/").map((part) => String(Number(part))).join("/");
+    if (normalized === expectedMonthDay) return true;
+  }
+
+  const weekStart = clean(schedule?.weekStart || schedule?.weekTag);
+  if (weekStart) {
+    const start = new Date(`${weekStart}T12:00:00`);
+    if (!Number.isNaN(start.getTime())) {
+      const todayKey = tampaDateKey(now);
+      const today = new Date(`${todayKey}T12:00:00`);
+      const diffDays = Math.round((today.getTime() - start.getTime()) / 86400000);
+      if (diffDays >= 0 && diffDays <= 6) return true;
+    }
+  }
+
+  return false;
+}
+
+function getEmployeeName(employee) {
+  return employee?.name || employee?.displayName || employee?.fullName || employee?.employeeName || "Employee";
+}
+
+function findUserForEmployee(employee, users) {
+  if (!employee) return null;
+  const linkedUserId = clean(employee.linkedUserId);
+  if (linkedUserId) {
+    const byId = users.find((user) => user.id === linkedUserId);
+    if (byId) return byId;
+  }
+  return users.find((user) => {
+    const employeeId = clean(employee.id);
+    return clean(user.employeeId) === employeeId || clean(user.linkedEmployeeId) === employeeId;
+  }) || null;
+}
+
+function resolveResponsibleSupervisors({ rule, schedules, employees, users, now = new Date() }) {
+  const dayKey = tampaDayKey(now);
+  const approvedSchedules = schedules.filter((schedule) => {
+    const status = upper(schedule.status || "APPROVED");
+    return status === "APPROVED" && scheduleMatchesRule(schedule, rule) && scheduleCoversToday(schedule, now);
+  });
+
+  const employeeMap = new Map(employees.map((employee) => [employee.id, employee]));
+  const seen = new Set();
+  const supervisors = [];
+
+  for (const schedule of approvedSchedules) {
+    const rows = Array.isArray(schedule.grid) ? schedule.grid : [];
+    for (const row of rows) {
+      const shifts = Array.isArray(row?.[dayKey]) ? row[dayKey] : [];
+      if (!shifts.some(shiftIsWorking)) continue;
+      const employee = employeeMap.get(clean(row.employeeId));
+      if (!employee) continue;
+      const linkedUser = findUserForEmployee(employee, users);
+      if (!linkedUser || upper(linkedUser.role) !== "SUPERVISOR") continue;
+      const key = linkedUser.id || employee.id;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      supervisors.push({
+        employeeId: employee.id,
+        userId: linkedUser.id,
+        name: visibleName(linkedUser) || getEmployeeName(employee),
+        username: clean(linkedUser.username || linkedUser.loginUsername),
+        department: clean(employee.department || linkedUser.department),
+        airline: clean(employee.airline || linkedUser.airline),
+        scheduleId: schedule.id,
+        scheduleDepartment: clean(schedule.department),
+        scheduleAirline: clean(schedule.airlineDisplayName || schedule.airline),
+        shifts: shifts.filter(shiftIsWorking).map((shift) => ({ start: clean(shift.start), end: clean(shift.end) })),
+      });
+    }
+  }
+
+  supervisors.sort((a, b) => a.name.localeCompare(b.name));
+  return {
+    supervisors,
+    scheduleIds: [...new Set(approvedSchedules.map((schedule) => schedule.id))],
+    source: supervisors.length ? "approved_schedule_plus_users" : "not_resolved",
+  };
+}
+
 function normalizeRule(id, data = {}) {
   return {
     id,
@@ -113,15 +249,17 @@ async function appendAudit({ dateKey, rule, assignment, actor }) {
     createdAt: serverTimestamp(),
     actorId: actor?.id || "",
     actorName: actor ? visibleName(actor) : "Smart Intelligence",
-    source: "smart_assignment_engine_v1",
+    source: "smart_assignment_engine_v2",
   });
 }
 
 export async function ensureDailySmartAssignments({ actor } = {}) {
   const dateKey = tampaDateKey();
-  const [rulesSnap, usersSnap] = await Promise.all([
+  const [rulesSnap, usersSnap, employeesSnap, schedulesSnap] = await Promise.all([
     getDocs(collection(db, SMART_RULES_COLLECTION)),
     getDocs(collection(db, "users")),
+    getDocs(collection(db, "employees")),
+    getDocs(collection(db, "schedules")),
   ]);
 
   const rules = rulesSnap.docs
@@ -129,9 +267,11 @@ export async function ensureDailySmartAssignments({ actor } = {}) {
     .filter((rule) => rule.active && rule.department)
     .sort((a, b) => a.department.localeCompare(b.department));
 
-  const allDutyManagers = usersSnap.docs
-    .map((item) => ({ id: item.id, ...item.data() }))
-    .filter((user) => upper(user.role) === "DUTY_MANAGER");
+  const allUsers = usersSnap.docs.map((item) => ({ id: item.id, ...item.data() }));
+  const employees = employeesSnap.docs.map((item) => ({ id: item.id, ...item.data() }));
+  const schedules = schedulesSnap.docs.map((item) => ({ id: item.id, ...item.data() }));
+
+  const allDutyManagers = allUsers.filter((user) => upper(user.role) === "DUTY_MANAGER");
 
   const activeDutyManagers = allDutyManagers
     .filter((user) => isDutyManagerFresh(user))
@@ -154,10 +294,52 @@ export async function ensureDailySmartAssignments({ actor } = {}) {
     const ref = doc(db, SMART_ASSIGNMENTS_COLLECTION, id);
     const existingSnap = await getDoc(ref);
     const existing = existingSnap.exists() ? existingSnap.data() : null;
+    const supervisorContext = resolveResponsibleSupervisors({
+      rule,
+      schedules,
+      employees,
+      users: allUsers,
+    });
+    const supervisorNames = supervisorContext.supervisors.map((item) => item.name);
+    const primarySupervisor = supervisorContext.supervisors.length === 1
+      ? supervisorContext.supervisors[0]
+      : null;
+    const supervisorPatch = {
+      responsibleSupervisors: supervisorContext.supervisors,
+      responsibleSupervisorNames: supervisorNames,
+      responsibleSupervisorCount: supervisorContext.supervisors.length,
+      responsibleSupervisorId: primarySupervisor?.employeeId || "",
+      responsibleSupervisorUserId: primarySupervisor?.userId || "",
+      responsibleSupervisorName: primarySupervisor?.name || "",
+      responsibleSupervisorSource: supervisorContext.source,
+      approvedScheduleIds: supervisorContext.scheduleIds,
+      supervisorResolvedAt: serverTimestamp(),
+    };
 
-    // Once a reviewer has been assigned for the date, keep the assignment stable.
+    // Once a reviewer has been assigned for the date, keep the assignment stable,
+    // but refresh the Approved Schedule / supervisor context every run.
     if (clean(existing?.assignedDutyManagerId)) {
-      results.push({ id, ...existing, preserved: true });
+      await setDoc(ref, { ...supervisorPatch, updatedAt: serverTimestamp() }, { merge: true });
+      const oldNames = Array.isArray(existing?.responsibleSupervisorNames)
+        ? existing.responsibleSupervisorNames.join("|")
+        : clean(existing?.responsibleSupervisorName);
+      const newNames = supervisorNames.join("|");
+      if (oldNames !== newNames && newNames) {
+        await setDoc(doc(db, SMART_AUDIT_COLLECTION, `${dateKey}__${slug(rule.id || rule.department)}__supervisor_${Date.now()}`), {
+          eventType: "RESPONSIBLE_SUPERVISOR_RESOLVED",
+          dateKey,
+          ruleId: rule.id,
+          department: rule.department,
+          responsibleSupervisorNames: supervisorNames,
+          responsibleSupervisors: supervisorContext.supervisors,
+          approvedScheduleIds: supervisorContext.scheduleIds,
+          createdAt: serverTimestamp(),
+          actorId: actor?.id || "",
+          actorName: actor ? visibleName(actor) : "Smart Intelligence",
+          source: "approved_schedule_plus_users",
+        });
+      }
+      results.push({ id, ...existing, ...supervisorPatch, preserved: true });
       continue;
     }
 
@@ -177,11 +359,12 @@ export async function ensureDailySmartAssignments({ actor } = {}) {
       requiredReports: rule.requiredReports,
       ruleNotes: rule.notes,
       dedicatedDutyManagerIds: rule.dedicatedDutyManagerIds,
+      ...supervisorPatch,
       assignedDutyManagerId: selected?.id || "",
       assignedDutyManagerName: selected ? visibleName(selected) : "",
       assignedDutyManagerDepartment: selected?.department || "",
       status: selected ? "ASSIGNED" : "WAITING_FOR_DUTY_MANAGER",
-      assignmentSource: "smart_assignment_engine_v1",
+      assignmentSource: "smart_assignment_engine_v2",
       updatedAt: serverTimestamp(),
       ...(existingSnap.exists()
         ? {}
