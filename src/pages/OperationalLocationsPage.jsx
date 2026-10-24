@@ -356,6 +356,15 @@ export default function OperationalLocationsPage() {
     }).sort((a, b) => b.samples.length - a.samples.length || `${a.originName} ${a.destinationName}`.localeCompare(`${b.originName} ${b.destinationName}`));
   }, [routeSamples, activeLocations, routes]);
 
+  const recordingRouteSamples = useMemo(() =>
+    routeSamples
+      .filter(sample => String(sample.learning_status || '').toUpperCase() === 'RECORDING')
+      .sort((a,b) => {
+        const av = Number(a.last_point_client_ms || a.started_at_client_ms || 0);
+        const bv = Number(b.last_point_client_ms || b.started_at_client_ms || 0);
+        return bv - av;
+      }), [routeSamples]);
+
   const approveLearningRoute = async group => {
     if (!allowed || approvingLearningKey) return;
     if (group.samples.length < 3) {
@@ -561,9 +570,17 @@ export default function OperationalLocationsPage() {
     <section style={{marginTop:24,background:'#fff',border:'1px solid #c7d2fe',borderRadius:18,padding:18}}>
       <div style={{display:'flex',justifyContent:'space-between',gap:12,alignItems:'center',flexWrap:'wrap'}}>
         <div><div style={{fontSize:12,fontWeight:800,letterSpacing:1.2,color:'#4f46e5'}}>SMART ROUTE LEARNING</div><h2 style={{margin:'3px 0 0'}}>Employee Route Learning</h2></div>
-        <span style={{fontSize:12,color:'#64748b'}}>{routeSamples.filter(sample=>String(sample.learning_status||'').toUpperCase()==='COMPLETED').length} completed samples</span>
+        <span style={{fontSize:12,color:'#64748b'}}>{routeSamples.filter(sample=>String(sample.learning_status||'').toUpperCase()==='COMPLETED').length} completed · {recordingRouteSamples.length} recording</span>
       </div>
       <p style={{color:'#64748b',fontSize:14,lineHeight:1.55}}>WCHR agents generate these route samples automatically from consented live tracking while performing real services. Review the operational evidence below before approving a learned route for Dispatch and Smart Intelligence.</p>
+      {recordingRouteSamples.length>0 && <div style={{display:'grid',gap:8,marginBottom:12}}>
+        <div style={{fontSize:12,fontWeight:900,color:'#0f6fae'}}>LIVE RECORDING SAMPLES</div>
+        {recordingRouteSamples.map(sample=><article key={sample.id} style={{padding:12,border:'1px solid #bae6fd',borderRadius:12,background:'#f0f9ff'}}>
+          <div style={{display:'flex',justifyContent:'space-between',gap:10,flexWrap:'wrap'}}><strong>{sample.origin_name||'Origin pending'} → {sample.destination_name||'Destination pending'}</strong><span style={{fontSize:11,fontWeight:900,color:'#0369a1'}}>RECORDING</span></div>
+          <div style={{fontSize:12,color:'#475569',marginTop:4}}>Agent: {sample.agent_name||'Unknown'} · Flight: {[sample.airline,sample.flight_number].filter(Boolean).join(' ')||'—'} · WCHR: {sample.wheelchair_number||'—'}</div>
+          <div style={{fontSize:12,color:'#64748b',marginTop:4}}>Last GPS: {sample.last_operational_location_name||'No geofence match yet'} · Accuracy: {sample.last_gps_accuracy_m==null?'—':`±${sample.last_gps_accuracy_m} m`} · Last point: {displayTime(sample.last_point_at||sample.updated_at)}</div>
+        </article>)}
+      </div>}
       {routeSamplesLoading ? <p>Loading employee route learning…</p> : learningGroups.length===0 ? <div style={{padding:14,borderRadius:12,background:'#f8fafc',color:'#64748b'}}>No completed employee route samples yet. Samples will appear automatically after agents complete tracked WCHR journeys.</div> : <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(280px,1fr))',gap:12}}>{learningGroups.map(group=><article key={group.key} style={{padding:15,border:'1px solid #e2e8f0',borderRadius:14,background:'#f8fbff'}}>
         <div style={{display:'flex',justifyContent:'space-between',gap:10,alignItems:'flex-start'}}>
           <div><div style={{fontWeight:900,fontSize:15}}>{group.originName} → {group.destinationName}</div><div style={{fontSize:12,color:'#64748b',marginTop:3}}>{group.serviceType} · {group.direction} · {group.samples.length} completed trip{group.samples.length===1?'':'s'} · {group.agentCount} agent{group.agentCount===1?'':'s'}</div></div>
