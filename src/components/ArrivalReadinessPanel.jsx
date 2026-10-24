@@ -73,7 +73,7 @@ export default function ArrivalReadinessPanel({ compact = false }) {
         <div>
           <div style={{ fontSize: 10, fontWeight: 900, color: "#2563eb", textTransform: "uppercase", letterSpacing: ".08em" }}>Station Intelligence</div>
           <div style={{ fontSize: compact ? 17 : 19, fontWeight: 900, color: "#0f172a", marginTop: 2 }}>Arrival Readiness</div>
-          <div style={{ fontSize: 11.5, color: "#64748b", marginTop: 2 }}>ETA + gate + punched-in WCHR availability + location. Supervisor confirms final staging/assignment.</div>
+          <div style={{ fontSize: 11.5, color: "#64748b", marginTop: 2 }}>ETA + gate + punched-in WCHR availability + recorded operational routes. Supervisor confirms final staging/assignment.</div>
         </div>
         <span style={{ borderRadius: 999, padding: "6px 10px", background: "#eff6ff", color: "#1d4ed8", fontWeight: 900, fontSize: 11 }}>{todayRows.length} ACTIVE</span>
       </div>
@@ -103,7 +103,7 @@ export default function ArrivalReadinessPanel({ compact = false }) {
               {candidates.length ? candidates.slice(0, 3).map((agent, index) => (
                 <div key={agent.agent_id || `${row.id}-${index}`} style={{ marginTop: 6, padding: "7px 9px", borderRadius: 10, background: "rgba(255,255,255,.82)", border: "1px solid rgba(148,163,184,.25)", display: "flex", justifyContent: "space-between", gap: 8 }}>
                   <span style={{ fontSize: 11.5, fontWeight: 850, color: "#0f172a" }}>{index + 1}. {agent.agent_name || "WCHR Agent"}</span>
-                  <span style={{ fontSize: 10.5, color: "#64748b", textAlign: "right" }}>{agent.location || "Location unknown"}{Number.isFinite(Number(agent.distance_meters)) ? ` · ~${Math.round(Number(agent.distance_meters))} m` : ""}</span>
+                  <span style={{ fontSize: 10.5, color: "#64748b", textAlign: "right" }}>{agent.route_origin_name || agent.location || "Location unknown"}{Number.isFinite(Number(agent.route_eta_minutes)) ? ` → gate · ~${Math.max(1, Math.round(Number(agent.route_eta_minutes)))} min` : Number.isFinite(Number(agent.distance_meters)) ? ` · ~${Math.round(Number(agent.distance_meters))} m` : ""}{agent.route_confidence && agent.route_confidence !== "UNKNOWN" ? ` · ${String(agent.route_confidence).toLowerCase()} confidence` : ""}</span>
                 </div>
               )) : <div style={{ marginTop: 6, fontSize: 11.5, color: "#991b1b", fontWeight: 800 }}>No eligible punched-in WCHR agent currently available.</div>}
 
