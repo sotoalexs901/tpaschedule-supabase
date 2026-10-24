@@ -97,17 +97,46 @@ function aeroDataBoxHeaders() {
   };
 }
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+let lastAeroDataBoxRequestAt = 0;
+
+async function waitForAeroDataBoxSlot() {
+  const minimumGapMs = 1150;
+  const elapsed = Date.now() - lastAeroDataBoxRequestAt;
+  if (elapsed < minimumGapMs) await sleep(minimumGapMs - elapsed);
+  lastAeroDataBoxRequestAt = Date.now();
+}
+
 async function aeroDataBoxGet(path, params = {}) {
   const url = new URL(`${AERODATABOX_API_BASE}${path}`);
   Object.entries(params).forEach(([key, value]) => {
     if (value !== undefined && value !== null && value !== "") url.searchParams.set(key, String(value));
   });
-  const response = await fetch(url, { headers: aeroDataBoxHeaders() });
-  if (!response.ok) {
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await waitForAeroDataBoxSlot();
+    const response = await fetch(url, { headers: aeroDataBoxHeaders() });
+
+    if (response.ok) return response.json();
+
     const body = await response.text();
+    if (response.status === 429 && attempt === 0) {
+      let retryMs = 1250;
+      try {
+        const parsed = JSON.parse(body);
+        if (Number.isFinite(Number(parsed?.retryAfterMs))) retryMs = Math.max(1250, Number(parsed.retryAfterMs) + 300);
+      } catch (_) {
+        const retryAfter = Number(response.headers.get("retry-after"));
+        if (Number.isFinite(retryAfter) && retryAfter > 0) retryMs = Math.max(1250, retryAfter * 1000 + 300);
+      }
+      await sleep(retryMs);
+      continue;
+    }
+
     throw new Error(`AeroDataBox ${response.status}: ${body.slice(0, 220)}`);
   }
-  return response.json();
+
+  throw new Error("AeroDataBox request failed after retry.");
 }
 
 function movementAirportCode(movement) {
