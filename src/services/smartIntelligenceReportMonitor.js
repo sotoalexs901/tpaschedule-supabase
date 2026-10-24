@@ -32,6 +32,13 @@ const REPORT_SOURCES = {
     submitterFields: ["submittedByName", "supervisorReporting", "updatedBy"],
     statusFields: ["reviewStatus", "status"],
   },
+  supervisor_daily_report: {
+    collection: "operational_reports",
+    dateFields: ["reportDate", "date"],
+    departmentFields: ["airline", "department", "templateKey"],
+    submitterFields: ["submittedByName", "supervisorReporting", "updatedBy"],
+    statusFields: ["reviewStatus", "status"],
+  },
   timesheet: {
     collection: "timesheet_reports",
     dateFields: ["reportDate", "date"],
