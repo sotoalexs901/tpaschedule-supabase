@@ -1184,12 +1184,14 @@ function InventoryCard({
 
 // Phase 5: read-only GPS overview. Coordinates are plotted relative to registered
 // reference points, not on a surveyed terminal floorplan. Never writes assignments.
-function OperationalGpsMap({ agents = [], catalog = [], now = Date.now() }) {
+function OperationalGpsMap({ agents = [], catalog = [], routes = [], now = Date.now() }) {
   const [expanded, setExpanded] = useState(false);
   const [filter, setFilter] = useState("ALL");
   const [selectedId, setSelectedId] = useState("");
   const [selectedReferenceId, setSelectedReferenceId] = useState("");
   const referencePoints = catalog.filter(p => p.active !== false && validGpsCoordinates(p.latitude, p.longitude));
+  const recordedRoutes = routes.filter(route => route?.status === "completed" && Array.isArray(route?.points) && route.points.length > 1);
+  const routePoints = recordedRoutes.flatMap(route => route.points.filter(point => validGpsCoordinates(point?.latitude, point?.longitude)).map(point => ({ lat: Number(point.latitude), lng: Number(point.longitude) })));
   const records = agents.map(agent => {
     const consent = agent.live_tracking_consent === true;
     const gps = agent.live_gps;
@@ -1199,7 +1201,7 @@ function OperationalGpsMap({ agents = [], catalog = [], now = Date.now() }) {
   });
   const mapped = records.filter(r => r.eligible);
   const shown = mapped.filter(r => filter === "ALL" || r.availability === filter);
-  const points = [...referencePoints.map(p => ({ lat: Number(p.latitude), lng: Number(p.longitude) })), ...mapped.map(r => ({ lat: Number(r.gps.latitude), lng: Number(r.gps.longitude) }))];
+  const points = [...referencePoints.map(p => ({ lat: Number(p.latitude), lng: Number(p.longitude) })), ...routePoints, ...mapped.map(r => ({ lat: Number(r.gps.latitude), lng: Number(r.gps.longitude) }))];
   const latMin = points.length ? Math.min(...points.map(p => p.lat)) : 0;
   const latMax = points.length ? Math.max(...points.map(p => p.lat)) : 1;
   const lngMin = points.length ? Math.min(...points.map(p => p.lng)) : 0;
@@ -1233,7 +1235,7 @@ function OperationalGpsMap({ agents = [], catalog = [], now = Date.now() }) {
       </div>
       {expanded && <div style={{ marginTop: 13 }}>
         <p style={{ fontSize: 11, lineHeight: 1.5, color: "#92400e", margin: "0 0 10px" }}>
-          GPS coordinate overview, NOT an airport floorplan. Indoor accuracy may be poor; nearest registered point is an estimate, not verified gate presence. Only recent (3 min) consented positions are plotted.
+          Operational route map built from registered TPA locations and recorded routes. Indoor GPS may drift; saved locations and route recordings are the primary operational anchors. Only recent (3 min) consented agent positions are plotted.
         </p>
         <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginBottom: 10 }}>
           {["ALL", "AVAILABLE", "BUSY", "BREAK", "UNAVAILABLE"].map(value => <button key={value} type="button" onClick={() => setFilter(value)} style={{ border: "1px solid #cbd5e1", borderRadius: 8, background: filter === value ? "#dbeafe" : "white", padding: "6px 9px", fontSize: 11, cursor: "pointer", fontWeight: 800 }}>{value === "ALL" ? "All" : getAvailabilityLabel(value)}</button>)}
@@ -1242,11 +1244,18 @@ function OperationalGpsMap({ agents = [], catalog = [], now = Date.now() }) {
           <svg viewBox="0 0 800 420" role="img" aria-label="Relative GPS positions and registered reference points" style={{ width: "100%", minWidth: 360, display: "block" }}>
             <rect x="0" y="0" width="800" height="420" fill="#eff6ff" />
             {[1,2,3].map(i => <g key={i}><line x1={i*200} y1="0" x2={i*200} y2="420" stroke="#dbeafe" /><line x1="0" y1={i*105} x2="800" y2={i*105} stroke="#dbeafe" /></g>)}
+            {recordedRoutes.map(route => {
+              const coords = (route.points || []).filter(point => validGpsCoordinates(point?.latitude, point?.longitude)).map(point => project(point.latitude, point.longitude));
+              if (coords.length < 2) return null;
+              const poly = coords.map(point => `${point.x},${point.y}`).join(" ");
+              return <polyline key={route.id} points={poly} fill="none" stroke={String(route.routeMode || "").toUpperCase() === "WCHR" ? "#0ea5e9" : "#8b5cf6"} strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" opacity="0.55" />;
+            })}
             {referencePoints.map(p => { const xy = project(p.latitude, p.longitude); const isSelected = selectedReferenceId === p.id; return <g key={p.id} onClick={() => { setSelectedReferenceId(p.id); setSelectedId(""); }} style={{cursor:"pointer"}}><rect x={xy.x-(isSelected ? 8 : 6)} y={xy.y-(isSelected ? 8 : 6)} width={isSelected ? 16 : 12} height={isSelected ? 16 : 12} rx="2" fill={isSelected ? "#1d4ed8" : "#64748b"} stroke="white" strokeWidth="2" /><text x={xy.x+10} y={xy.y-9} fontSize="11" fill="#475569">{String(p.name || "Reference").slice(0,22)}</text></g>; })}
             {shown.map(r => { const xy = project(r.gps.latitude, r.gps.longitude); const isSelected = selectedId === r.agent.id; const color = r.availability === "AVAILABLE" ? "#16a34a" : r.availability === "BUSY" ? "#ea580c" : "#64748b"; return <g key={r.agent.id} onClick={() => { setSelectedId(r.agent.id); setSelectedReferenceId(""); }} style={{ cursor: "pointer" }}><circle cx={xy.x} cy={xy.y} r={isSelected ? 12 : 9} fill={color} stroke="white" strokeWidth="3" /><text x={xy.x+13} y={xy.y+5} fontSize="12" fontWeight="700" fill="#0f172a">{getAgentName(r.agent).slice(0,22)}</text></g>; })}
           </svg>
         </div> : <div style={{ padding: 18, background: "white", borderRadius: 10, color: "#64748b" }}>No registered GPS reference points or current authorized agent fixes to plot.</div>}
-        <div style={{ fontSize: 11, color: "#64748b", marginTop: 8 }}>Squares = Duty Manager registered points · Green = Available · Orange = Busy · Gray = Other. Positions are relative GPS coordinates, not walking routes.</div>
+        <div style={{ fontSize: 11, color: "#64748b", marginTop: 8 }}>Blue/Violet lines = recorded operational routes · Squares = registered locations · Green = Available · Orange = Busy · Gray = Other. The map improves as more locations and routes are recorded.</div>
+        {recordedRoutes.length > 0 && <div style={{marginTop:10,padding:10,borderRadius:10,background:"#fff",border:"1px solid #dbeafe",fontSize:11,color:"#475569"}}><strong style={{color:"#0f4c81"}}>Route intelligence:</strong> {recordedRoutes.length} recorded route{recordedRoutes.length===1?"":"s"} currently shaping this map.</div>}
         {shown.length > 0 && <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginTop: 12 }}>{shown.map(r => <button key={r.agent.id} type="button" onClick={() => { setSelectedId(r.agent.id); setSelectedReferenceId(""); }} style={{ background: selectedId === r.agent.id ? "#dbeafe" : "white", border: "1px solid #cbd5e1", borderRadius: 9, padding: "7px 9px", cursor: "pointer", fontSize: 11 }}>{getAgentName(r.agent)} · {getAvailabilityLabel(r.availability)}</button>)}</div>}
         {referencePoints.length > 0 && <div style={{marginTop:12}}>
           <div style={{fontSize:12,fontWeight:800,color:"#334155",marginBottom:7}}>Registered operational locations · select to view photo and nearby agents</div>
@@ -2158,8 +2167,15 @@ export default function WchrDispatchPage() {
   ] = useState([]);
 
   const [operationalLocationCatalog, setOperationalLocationCatalog] = useState([]);
+  const [operationalRoutes, setOperationalRoutes] = useState([]);
   useEffect(() => subscribeOperationalLocations(setOperationalLocationCatalog, error => {
     console.warn("Operational location catalog unavailable; legacy location matching remains available.", error);
+  }), []);
+  useEffect(() => onSnapshot(collection(db, "operational_routes"), snap => {
+    setOperationalRoutes(snap.docs.map(item => ({ id: item.id, ...item.data() })));
+  }, error => {
+    console.warn("Operational routes unavailable; location-only map remains available.", error);
+    setOperationalRoutes([]);
   }), []);
 
   const umnrEnabled = import.meta.env.VITE_UMNR_ENABLED === "true";
@@ -8544,7 +8560,7 @@ export default function WchrDispatchPage() {
             </div>
           </div>
 
-          <OperationalGpsMap agents={agents} catalog={operationalLocationCatalog} now={now} />
+          <OperationalGpsMap agents={agents} catalog={operationalLocationCatalog} routes={operationalRoutes} now={now} />
 
           {loadingAgents ? (
             <div
