@@ -32,6 +32,10 @@ import {
   clearAeroStationAppBadge,
 } from "../utils/appBadge.js";
 import { ensureDailySmartAssignments } from "../services/smartIntelligenceAssignmentEngine.js";
+import {
+  SMART_ALERTS_COLLECTION,
+  refreshSmartReportPackages,
+} from "../services/smartIntelligenceReportMonitor.js";
 
 const WHATS_NEW_RELEASE = "2.0.5";
 const WHATS_NEW_STORAGE_PREFIX = "aerostation-whats-new-seen:";
@@ -649,7 +653,7 @@ export default function AppLayout() {
   }, [user?.role, user?.employeeId]);
 
   // ============================================================
-  // ACTIVE OPERATIONAL ALERTS - DUTY / STATION MANAGEMENT
+  // SMART INTELLIGENCE ALERTS - TARGETED BY USER / ROLE
   // ============================================================
 
   useEffect(() => {
@@ -661,29 +665,29 @@ export default function AppLayout() {
     }
 
     const unsub = onSnapshot(
-      collection(db, "operational_alerts"),
+      collection(db, SMART_ALERTS_COLLECTION),
       (snap) => {
         const count = snap.docs.filter((item) => {
-          const data = item.data();
-          const targets = Array.isArray(data.targetRoles)
-            ? data.targetRoles.map((value) =>
-                String(value || "").trim().toLowerCase()
-              )
-            : [];
+          const data = item.data() || {};
+          if (data.active === false) return false;
 
-          return !targets.length || targets.includes(role);
+          if (role === "station_manager") {
+            return String(data.targetRole || "").trim().toLowerCase() === "station_manager";
+          }
+
+          return String(data.targetUserId || "").trim() === String(user?.id || "").trim();
         }).length;
 
         setOperationalAlerts(count);
       },
       (err) => {
-        console.error("Error listening operational alerts:", err);
+        console.error("Error listening Smart Intelligence alerts:", err);
         setOperationalAlerts(0);
       }
     );
 
     return () => unsub();
-  }, [user?.role]);
+  }, [user?.role, user?.id]);
 
   // ============================================================
   // OPEN WCHR DUTY FOLLOW-UPS - DUTY / STATION MANAGEMENT
@@ -1004,18 +1008,30 @@ export default function AppLayout() {
   // ============================================================
 
   useEffect(() => {
-    if (!user?.id) return;
-    if (user?.role !== "duty_manager" && user?.role !== "station_manager") return;
+    if (!user?.id) return undefined;
+    if (user?.role !== "duty_manager" && user?.role !== "station_manager") return undefined;
 
-    // Run after presence has had a moment to reach Firestore. The engine is
-    // idempotent and preserves any department already assigned for the day.
-    const timer = window.setTimeout(() => {
-      ensureDailySmartAssignments({ actor: user }).catch((error) =>
-        console.error("Smart Intelligence daily assignment check failed:", error)
-      );
-    }, 1500);
+    let cancelled = false;
 
-    return () => window.clearTimeout(timer);
+    const runSmartIntelligence = async () => {
+      try {
+        await ensureDailySmartAssignments({ actor: user });
+        if (!cancelled) {
+          await refreshSmartReportPackages({ actor: user });
+        }
+      } catch (error) {
+        console.error("Smart Intelligence automatic check failed:", error);
+      }
+    };
+
+    const startup = window.setTimeout(runSmartIntelligence, 1500);
+    const interval = window.setInterval(runSmartIntelligence, 5 * 60 * 1000);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(startup);
+      window.clearInterval(interval);
+    };
   }, [user?.id, user?.role]);
 
   // ============================================================
