@@ -268,6 +268,70 @@ function assignmentId(dateKey, rule) {
   return `${dateKey}__${slug(rule.id || rule.department)}`;
 }
 
+export async function selectResponsibleSupervisor({ assignmentId: id, supervisorUserId, actor } = {}) {
+  const assignmentKey = clean(id);
+  const selectedUserId = clean(supervisorUserId);
+  if (!assignmentKey || !selectedUserId) {
+    throw new Error("Assignment and supervisor are required.");
+  }
+
+  const ref = doc(db, SMART_ASSIGNMENTS_COLLECTION, assignmentKey);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error("Smart Intelligence assignment not found.");
+
+  const assignment = snap.data() || {};
+  const actorRole = upper(actor?.role);
+  const isAssignedDutyManager =
+    actorRole === "DUTY_MANAGER" && clean(assignment.assignedDutyManagerId) === clean(actor?.id);
+  const isStationManager = actorRole === "STATION_MANAGER";
+
+  if (!isAssignedDutyManager && !isStationManager) {
+    throw new Error("Only the assigned Duty Manager or Station Manager can select the responsible supervisor.");
+  }
+
+  const candidates = Array.isArray(assignment.responsibleSupervisors)
+    ? assignment.responsibleSupervisors
+    : [];
+  const selected = candidates.find((item) => clean(item?.userId) === selectedUserId);
+  if (!selected) {
+    throw new Error("Selected supervisor is not listed as on duty for this department today.");
+  }
+
+  const patch = {
+    responsibleSupervisorId: clean(selected.employeeId),
+    responsibleSupervisorUserId: clean(selected.userId),
+    responsibleSupervisorName: clean(selected.name),
+    responsibleSupervisorSource: "manual_selection_from_approved_schedule",
+    responsibleSupervisorSelectedById: clean(actor?.id),
+    responsibleSupervisorSelectedByName: actor ? visibleName(actor) : "",
+    responsibleSupervisorSelectedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  };
+
+  await setDoc(ref, patch, { merge: true });
+
+  await setDoc(
+    doc(db, SMART_AUDIT_COLLECTION, `${assignment.dateKey || tampaDateKey()}__${slug(assignment.ruleId || assignment.department)}__supervisor_selected_${Date.now()}`),
+    {
+      eventType: "RESPONSIBLE_SUPERVISOR_SELECTED",
+      dateKey: assignment.dateKey || tampaDateKey(),
+      ruleId: assignment.ruleId || "",
+      department: assignment.department || "",
+      assignedDutyManagerId: assignment.assignedDutyManagerId || "",
+      assignedDutyManagerName: assignment.assignedDutyManagerName || "",
+      responsibleSupervisorId: clean(selected.employeeId),
+      responsibleSupervisorUserId: clean(selected.userId),
+      responsibleSupervisorName: clean(selected.name),
+      selectedById: clean(actor?.id),
+      selectedByName: actor ? visibleName(actor) : "",
+      createdAt: serverTimestamp(),
+      source: "smart_intelligence_manual_supervisor_selection_v1",
+    }
+  );
+
+  return { id: assignmentKey, ...assignment, ...patch };
+}
+
 async function appendAudit({ dateKey, rule, assignment, actor }) {
   const id = `${dateKey}__${slug(rule.id || rule.department)}__${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   await setDoc(doc(db, SMART_AUDIT_COLLECTION, id), {
