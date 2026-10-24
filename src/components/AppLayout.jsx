@@ -1206,6 +1206,11 @@ export default function AppLayout() {
     if (user?.role === "station_manager") {
       admin.push(
         {
+          to: "/admin/system-update",
+          label: "System Update",
+          icon: "🔄",
+        },
+        {
           to: "/admin/activity-dashboard",
           label: "User Activity",
           icon: "\u{1F4C8}",
