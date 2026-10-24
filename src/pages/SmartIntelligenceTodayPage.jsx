@@ -136,8 +136,19 @@ export default function SmartIntelligenceTodayPage() {
                     </span>
                   </div>
 
-                  <div style={{ marginTop: 12, fontSize: 13 }}>
-                    <strong>Duty Manager:</strong> {row.assignedDutyManagerName || "Waiting for an eligible Duty Manager to enter AeroStation"}
+                  <div style={{ marginTop: 12, display: "grid", gap: 6, fontSize: 13 }}>
+                    <div><strong>Duty Manager:</strong> {row.assignedDutyManagerName || "Waiting for an eligible Duty Manager to enter AeroStation"}</div>
+                    <div>
+                      <strong>{Number(row.responsibleSupervisorCount || 0) > 1 ? "Supervisors on Duty:" : "Responsible Supervisor:"}</strong>{" "}
+                      {Array.isArray(row.responsibleSupervisorNames) && row.responsibleSupervisorNames.length
+                        ? row.responsibleSupervisorNames.join(", ")
+                        : row.responsibleSupervisorName || "Not identified from Approved Schedule yet"}
+                    </div>
+                    <div style={{ fontSize: 11.5, color: "#64748b" }}>
+                      Source: {row.responsibleSupervisorSource === "approved_schedule_plus_users"
+                        ? "Approved Schedule + Manage Users"
+                        : "Waiting for Approved Schedule / linked Supervisor user"}
+                    </div>
                   </div>
 
                   <div style={{ marginTop: 10 }}>
@@ -162,7 +173,7 @@ export default function SmartIntelligenceTodayPage() {
       {user?.role === "station_manager" && (
         <Card>
           <div style={{ fontSize: 12, color: "#64748b", lineHeight: 1.55 }}>
-            Assignments created by Smart Intelligence are stored by date and department for future audit. The next phase will attach the responsible supervisor from Approved Schedule and compare received reports against each department's configured list.
+            Assignments are stored by date and department for future audit. Responsible supervisors are resolved from the Approved Schedule and validated against linked Manage Users roles. The next phase will compare received reports against each department's configured list.
           </div>
         </Card>
       )}
