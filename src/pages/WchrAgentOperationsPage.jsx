@@ -12,6 +12,7 @@ import {
   query,
   runTransaction,
   serverTimestamp,
+  setDoc,
   updateDoc,
   where,
 } from "firebase/firestore";
@@ -85,6 +86,11 @@ const GATE_LOCATIONS = AGENT_LOCATIONS.filter((location) =>
 );
 
 const WCHR_INVENTORY_COLLECTION = "wchr_inventory";
+
+const ROUTE_SAMPLES_COLLECTION = "operational_route_samples";
+const ROUTE_POINT_MIN_DISTANCE_METERS = 8;
+const ROUTE_POINT_MAX_GAP_MS = 30000;
+const ROUTE_POINT_GOOD_ACCURACY_METERS = 80;
 
 const IB_DESTINATIONS = [
   "Main Terminal",
@@ -164,6 +170,69 @@ function getTimestampMillis(value) {
   return Number.isNaN(parsed.getTime())
     ? 0
     : parsed.getTime();
+}
+
+function haversineMeters(first, second) {
+  if (!first || !second) return Infinity;
+  const lat1 = Number(first.latitude);
+  const lon1 = Number(first.longitude);
+  const lat2 = Number(second.latitude);
+  const lon2 = Number(second.longitude);
+  if (![lat1, lon1, lat2, lon2].every(Number.isFinite)) return Infinity;
+  const toRad = (value) => (value * Math.PI) / 180;
+  const radius = 6371000;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+      Math.sin(dLon / 2) ** 2;
+  return 2 * radius * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function getRouteLearningContext(report) {
+  if (!report?.id) return null;
+  const direction = safeUpper(report?.service_direction) === "IB" ? "IB" : "OB";
+  const status = safeUpper(
+    direction === "IB"
+      ? report?.ib_status || report?.service_status || report?.tracking_status
+      : report?.service_status || report?.tracking_status
+  );
+
+  if (direction === "IB") {
+    if (status !== IB_STATUS.IN_TRANSIT) return null;
+    return {
+      direction,
+      origin: cleanText(report?.ib_pickup_location || report?.pickup_location) || "CBP",
+      originId: cleanText(report?.ib_pickup_location_id || report?.pickup_location_id),
+      destination: cleanText(report?.ib_destination),
+      destinationId: cleanText(report?.ib_destination_id),
+    };
+  }
+
+  if (!["PICKED_UP", "IN_TRANSIT"].includes(status)) return null;
+  const rawGate = cleanText(report?.gate_location || report?.gate);
+  const destination = rawGate
+    ? rawGate.toUpperCase().startsWith("GATE ")
+      ? rawGate
+      : `Gate ${rawGate}`
+    : "";
+  return {
+    direction,
+    origin: cleanText(
+      report?.pickup_location ||
+        report?.initial_pickup_location ||
+        report?.ready_location ||
+        report?.current_location
+    ),
+    originId: cleanText(
+      report?.pickup_location_id ||
+        report?.initial_pickup_location_id ||
+        report?.ready_location_id
+    ),
+    destination,
+    destinationId: cleanText(report?.gate_location_id),
+  };
 }
 
 function formatTimestamp(value) {
@@ -1145,6 +1214,182 @@ export default function WchrAgentOperationsPage() {
     safeUpper(shift?.status) ===
     WCHR_AGENT_STATUS.ACTIVE;
 
+  // ============================================================
+  // PASSIVE ROUTE LEARNING
+  // ============================================================
+  // Uses the existing consented foreground GPS watcher. It does not create
+  // a second geolocation watcher. Each real WCHR journey becomes one sample.
+  let routePointMemory = null;
+
+  const savePassiveRoutePoint = async ({ report, position, zone }) => {
+    const context = getRouteLearningContext(report);
+    if (!context || !agentId || !position?.coords) return;
+
+    const { latitude, longitude, accuracy } = position.coords;
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
+
+    const nowMs = Date.now();
+    const current = {
+      latitude,
+      longitude,
+      accuracy: Number.isFinite(accuracy) ? accuracy : null,
+      zoneId: zone?.id || "",
+      zoneName: zone?.name || "",
+      recordedAtMs: nowMs,
+    };
+
+    const previous = routePointMemory;
+    const movedMeters = previous ? haversineMeters(previous, current) : Infinity;
+    const zoneChanged = Boolean(
+      current.zoneId && current.zoneId !== (previous?.zoneId || "")
+    );
+    const gapMs = previous ? nowMs - previous.recordedAtMs : Infinity;
+
+    if (
+      previous &&
+      movedMeters < ROUTE_POINT_MIN_DISTANCE_METERS &&
+      !zoneChanged &&
+      gapMs < ROUTE_POINT_MAX_GAP_MS
+    ) {
+      return;
+    }
+
+    const sampleRef = doc(db, ROUTE_SAMPLES_COLLECTION, report.id);
+    const pointRef = doc(collection(sampleRef, "points"));
+    const accuracyMeters = Number.isFinite(accuracy) ? Math.round(accuracy) : null;
+    const pointQuality =
+      accuracyMeters === null
+        ? "UNKNOWN"
+        : accuracyMeters <= 35
+        ? "HIGH"
+        : accuracyMeters <= ROUTE_POINT_GOOD_ACCURACY_METERS
+        ? "USABLE"
+        : "LOW";
+
+    await setDoc(
+      sampleRef,
+      {
+        sample_id: report.id,
+        report_doc_id: report.id,
+        report_id: report.report_id || report.id,
+        service_type: "WCHR",
+        service_direction: context.direction,
+        airline: report.airline || "",
+        flight_number: report.flight_number || "",
+        service_date: report.service_date || report.flight_date || "",
+        wheelchair_number: report.wheelchair_number || "",
+        agent_id: agentId,
+        agent_name: getEmployeeName(employee),
+        origin_name: context.origin || "",
+        origin_location_id: context.originId || "",
+        destination_name: context.destination || "",
+        destination_location_id: context.destinationId || "",
+        learning_status: "RECORDING",
+        source: "WCHR_LIVE_SERVICE",
+        consent_source: "live_tracking_consent",
+        last_point_at: serverTimestamp(),
+        updated_at: serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+    await setDoc(pointRef, {
+      latitude,
+      longitude,
+      accuracy_m: accuracyMeters,
+      accuracy_quality: pointQuality,
+      usable_for_learning:
+        accuracyMeters !== null &&
+        accuracyMeters <= ROUTE_POINT_GOOD_ACCURACY_METERS,
+      operational_location_id: current.zoneId,
+      operational_location_name: current.zoneName,
+      service_status: safeUpper(
+        report.service_status || report.tracking_status || report.ib_status
+      ),
+      recorded_at: serverTimestamp(),
+      recorded_at_client_ms: nowMs,
+      source: "browser_geolocation",
+    });
+
+    routePointMemory = current;
+  };
+
+  const initializePassiveRouteSample = async ({ report, origin, destination, direction }) => {
+    if (!report?.id || !agentId) return;
+    const nowMs = Date.now();
+    await setDoc(
+      doc(db, ROUTE_SAMPLES_COLLECTION, report.id),
+      {
+        sample_id: report.id,
+        report_doc_id: report.id,
+        report_id: report.report_id || report.id,
+        service_type: "WCHR",
+        service_direction: direction,
+        airline: report.airline || "",
+        flight_number: report.flight_number || "",
+        service_date: report.service_date || report.flight_date || "",
+        wheelchair_number: report.wheelchair_number || "",
+        agent_id: agentId,
+        agent_name: getEmployeeName(employee),
+        origin_name: origin || "",
+        destination_name: destination || "",
+        learning_status: "RECORDING",
+        source: "WCHR_LIVE_SERVICE",
+        consent_source: "live_tracking_consent",
+        started_at: serverTimestamp(),
+        started_at_client_ms: nowMs,
+        updated_at: serverTimestamp(),
+      },
+      { merge: true }
+    );
+  };
+
+  const finalizePassiveRouteSample = async ({ report, destination, completionType }) => {
+    if (!report?.id || !agentId) return;
+    try {
+      const sampleRef = doc(db, ROUTE_SAMPLES_COLLECTION, report.id);
+      const sampleSnapshot = await getDoc(sampleRef);
+      const sample = sampleSnapshot.exists() ? sampleSnapshot.data() || {} : {};
+      const completedMs = Date.now();
+      const reportStartedMs = getTimestampMillis(
+        safeUpper(report?.service_direction) === "IB"
+          ? report?.ib_transit_started_at || report?.timer_started_at
+          : report?.pickup_at || report?.picked_up_at || report?.in_transit_at
+      );
+      const startedMs = Number(sample.started_at_client_ms || 0) || reportStartedMs;
+      const durationSeconds = startedMs
+        ? Math.max(0, Math.round((completedMs - startedMs) / 1000))
+        : null;
+      await setDoc(
+        sampleRef,
+        {
+          sample_id: report.id,
+          report_doc_id: report.id,
+          report_id: report.report_id || report.id,
+          service_type: "WCHR",
+          service_direction:
+            safeUpper(report?.service_direction) === "IB" ? "IB" : "OB",
+          agent_id: agentId,
+          agent_name: getEmployeeName(employee),
+          destination_name: destination || sample.destination_name || "",
+          learning_status: "COMPLETED",
+          completion_type: completionType,
+          completed_at: serverTimestamp(),
+          completed_at_client_ms: completedMs,
+          duration_seconds: durationSeconds,
+          duration_minutes:
+            durationSeconds === null
+              ? null
+              : Number((durationSeconds / 60).toFixed(2)),
+          updated_at: serverTimestamp(),
+        },
+        { merge: true }
+      );
+    } catch (routeError) {
+      console.warn("Passive route sample finalization failed:", routeError);
+    }
+  };
+
   // Geofenced operational location for both Lobby and WCHR Agents.
   // Requires explicit consent and a foreground browser with location permission.
   const [gpsState, setGpsState] = useState("inactive");
@@ -1177,11 +1422,18 @@ export default function WchrAgentOperationsPage() {
           fields.location_updated_at=serverTimestamp();
         }
         await updateDoc(doc(db,"wchr_agent_shifts",agentId),fields);
+        if (activeReport?.id) {
+          try {
+            await savePassiveRoutePoint({ report: activeReport, position, zone });
+          } catch (routeError) {
+            console.warn("Passive route point save failed:", routeError);
+          }
+        }
       } catch(err) { console.error("Geofence GPS update failed",err); setGpsState("save-error"); }
     }, err=>{setGpsState(err.code===1?"permission-denied":"unavailable");setAutoLocationStatus("GPS unavailable");},
     {enableHighAccuracy:true,maximumAge:10000,timeout:20000});
     return ()=>{cancelled=true;navigator.geolocation.clearWatch(watcher);};
-  },[agentId,isPunchedIn,shift?.live_tracking_consent,shift?.current_location,operationalZones]);
+  },[agentId,isPunchedIn,shift?.live_tracking_consent,shift?.current_location,operationalZones,activeReport?.id,activeReport?.service_status,activeReport?.tracking_status,activeReport?.ib_status]);
 
   const availability = safeUpper(
     shift?.availability_status
@@ -1936,6 +2188,19 @@ export default function WchrAgentOperationsPage() {
         user,
       });
 
+      if (shift?.live_tracking_consent === true) {
+        try {
+          await initializePassiveRouteSample({
+            report: { ...activeReport, wheelchair_number: selectedWheelchairNumber },
+            origin: "CBP",
+            destination: selectedIbDestination,
+            direction: "IB",
+          });
+        } catch (routeError) {
+          console.warn("Passive inbound route sample start failed:", routeError);
+        }
+      }
+
       setSelectedLocation("CBP");
       setMessage(`Transit started. Timer is now running from CBP to ${selectedIbDestination}.`);
     } catch (err) {
@@ -2090,6 +2355,12 @@ export default function WchrAgentOperationsPage() {
         location: destination,
         note: `Inbound passenger delivered from CBP to ${destination}. Transit time: ${formatElapsedTime(elapsedSeconds)}. WCHR remains assigned pending storage.`,
         user,
+      });
+
+      await finalizePassiveRouteSample({
+        report: activeReport,
+        destination,
+        completionType: "IB_PASSENGER_DELIVERED",
       });
 
       setSelectedLocation(destination);
@@ -2640,6 +2911,25 @@ export default function WchrAgentOperationsPage() {
         location,
       });
 
+      if (shift?.live_tracking_consent === true) {
+        try {
+          const rawGate = cleanText(activeReport.gate_location || activeReport.gate);
+          const destination = rawGate
+            ? rawGate.toUpperCase().startsWith("GATE ")
+              ? rawGate
+              : `Gate ${rawGate}`
+            : "";
+          await initializePassiveRouteSample({
+            report: activeReport,
+            origin: location,
+            destination,
+            direction: "OB",
+          });
+        } catch (routeError) {
+          console.warn("Passive outbound route sample start failed:", routeError);
+        }
+      }
+
       setLocationNote("");
       setMessage(
         `WCHR ${
@@ -2838,6 +3128,12 @@ export default function WchrAgentOperationsPage() {
           cleanText(locationNote) ||
           `Passenger and WCHR arrived at ${gateLocation}. Supervisor 15-minute gate monitoring started.`,
         user,
+      });
+
+      await finalizePassiveRouteSample({
+        report: activeReport,
+        destination: gateLocation,
+        completionType: "AT_GATE",
       });
 
       await updateDoc(shiftRef, {
@@ -4425,5 +4721,3 @@ export default function WchrAgentOperationsPage() {
     </div>
   );
 }
-
-// END WchrAgentOperationsPage.jsx
