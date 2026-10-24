@@ -1189,11 +1189,18 @@ export default function AppLayout() {
 
     // Dynamic airport reference points; agent Live Location remains separate.
     if (isManagementUser) {
-      admin.push({
-        to: "/operational-locations",
-        label: "TPA Location Management",
-        icon: "\u{1F4CD}",
-      });
+      admin.push(
+        {
+          to: "/flight-watch",
+          label: "Flight Watch",
+          icon: "✈️",
+        },
+        {
+          to: "/operational-locations",
+          label: "TPA Location Management",
+          icon: "\u{1F4CD}",
+        }
+      );
     }
 
     if (user?.role === "station_manager") {
