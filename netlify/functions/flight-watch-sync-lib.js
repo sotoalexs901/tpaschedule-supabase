@@ -254,16 +254,38 @@ function notificationCopy(watch, event, next) {
   }
 }
 
+function departmentAliases(value) {
+  const text = normalize(value);
+  const aliases = new Set();
+  if (!text) return aliases;
+
+  aliases.add(text);
+  if (/\bwchr\b|wheelchair/.test(text)) aliases.add("wchr");
+  if (/avianca|\bav\b/.test(text)) { aliases.add("av"); aliases.add("av ticket counter"); }
+  if (/sun country|\bsy\b/.test(text)) { aliases.add("sy"); aliases.add("sy ticket counter"); }
+  if (/world atlantic|\bwl\b/.test(text)) { aliases.add("wl"); aliases.add("world atlantic"); }
+  if (/aa bso|\bbso\b|american airlines bso/.test(text)) aliases.add("aa bso");
+  if (/dl cabin|delta cabin|cabin service/.test(text)) aliases.add("dl cabin service");
+  return aliases;
+}
+
 function userMatchesTargets(userData, targetDepartments) {
   if (!Array.isArray(targetDepartments) || !targetDepartments.length) return true;
   if (targetDepartments.some((item) => upper(item) === "ALL")) return true;
   const role = clean(userData.role);
   if (["station_manager", "duty_manager"].includes(role)) return true;
-  const department = normalize(userData.department);
-  if (!department) return false;
+
+  const userAliases = new Set();
+  [userData.department, userData.departmentName, userData.airline, userData.airlineAccount, userData.account, userData.position]
+    .forEach((value) => departmentAliases(value).forEach((item) => userAliases.add(item)));
+  if (!userAliases.size) return false;
+
   return targetDepartments.some((target) => {
-    const normalized = normalize(target);
-    return normalized === department || normalized.includes(department) || department.includes(normalized);
+    const targetAliases = departmentAliases(target);
+    for (const candidate of targetAliases) {
+      if (userAliases.has(candidate)) return true;
+    }
+    return false;
   });
 }
 
