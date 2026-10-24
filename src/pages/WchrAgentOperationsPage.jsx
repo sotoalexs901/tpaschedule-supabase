@@ -1,7 +1,7 @@
-// src/pages/WchrAgentOperationsPage.jsx
+ //src/pages/WchrAgentOperationsPage.jsx
 
 import UmnrOperationsPanel from "../components/UmnrOperationsPanel.jsx";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   collection,
@@ -1219,7 +1219,8 @@ export default function WchrAgentOperationsPage() {
   // ============================================================
   // Uses the existing consented foreground GPS watcher. It does not create
   // a second geolocation watcher. Each real WCHR journey becomes one sample.
-  let routePointMemory = null;
+  const routePointMemoryRef = useRef(null);
+  const routeBootstrapRef = useRef("");
 
   const savePassiveRoutePoint = async ({ report, position, zone }) => {
     const context = getRouteLearningContext(report);
@@ -1238,7 +1239,7 @@ export default function WchrAgentOperationsPage() {
       recordedAtMs: nowMs,
     };
 
-    const previous = routePointMemory;
+    const previous = routePointMemoryRef.current;
     const movedMeters = previous ? haversineMeters(previous, current) : Infinity;
     const zoneChanged = Boolean(
       current.zoneId && current.zoneId !== (previous?.zoneId || "")
@@ -1288,6 +1289,10 @@ export default function WchrAgentOperationsPage() {
         source: "WCHR_LIVE_SERVICE",
         consent_source: "live_tracking_consent",
         last_point_at: serverTimestamp(),
+        last_point_client_ms: nowMs,
+        last_gps_accuracy_m: accuracyMeters,
+        last_operational_location_name: current.zoneName,
+        route_learning_agent_page_active: true,
         updated_at: serverTimestamp(),
       },
       { merge: true }
@@ -1311,37 +1316,40 @@ export default function WchrAgentOperationsPage() {
       source: "browser_geolocation",
     });
 
-    routePointMemory = current;
+    routePointMemoryRef.current = current;
   };
 
   const initializePassiveRouteSample = async ({ report, origin, destination, direction }) => {
     if (!report?.id || !agentId) return;
+    const sampleRef = doc(db, ROUTE_SAMPLES_COLLECTION, report.id);
+    const existingSnapshot = await getDoc(sampleRef);
+    const existing = existingSnapshot.exists() ? existingSnapshot.data() || {} : {};
     const nowMs = Date.now();
-    await setDoc(
-      doc(db, ROUTE_SAMPLES_COLLECTION, report.id),
-      {
-        sample_id: report.id,
-        report_doc_id: report.id,
-        report_id: report.report_id || report.id,
-        service_type: "WCHR",
-        service_direction: direction,
-        airline: report.airline || "",
-        flight_number: report.flight_number || "",
-        service_date: report.service_date || report.flight_date || "",
-        wheelchair_number: report.wheelchair_number || "",
-        agent_id: agentId,
-        agent_name: getEmployeeName(employee),
-        origin_name: origin || "",
-        destination_name: destination || "",
-        learning_status: "RECORDING",
-        source: "WCHR_LIVE_SERVICE",
-        consent_source: "live_tracking_consent",
-        started_at: serverTimestamp(),
-        started_at_client_ms: nowMs,
-        updated_at: serverTimestamp(),
-      },
-      { merge: true }
-    );
+    const baseFields = {
+      sample_id: report.id,
+      report_doc_id: report.id,
+      report_id: report.report_id || report.id,
+      service_type: "WCHR",
+      service_direction: direction,
+      airline: report.airline || "",
+      flight_number: report.flight_number || "",
+      service_date: report.service_date || report.flight_date || "",
+      wheelchair_number: report.wheelchair_number || "",
+      agent_id: agentId,
+      agent_name: getEmployeeName(employee),
+      origin_name: origin || existing.origin_name || "",
+      destination_name: destination || existing.destination_name || "",
+      learning_status: "RECORDING",
+      source: "WCHR_LIVE_SERVICE",
+      consent_source: "live_tracking_consent",
+      route_learning_last_bootstrap_at: serverTimestamp(),
+      updated_at: serverTimestamp(),
+    };
+    if (!existingSnapshot.exists()) {
+      baseFields.started_at = serverTimestamp();
+      baseFields.started_at_client_ms = nowMs;
+    }
+    await setDoc(sampleRef, baseFields, { merge: true });
   };
 
   const finalizePassiveRouteSample = async ({ report, destination, completionType }) => {
@@ -1469,6 +1477,43 @@ export default function WchrAgentOperationsPage() {
   const currentServiceStatus = getCurrentServiceStatus(
     activeReport
   );
+
+  // Self-healing Route Learning bootstrap. If an agent refreshes the page or
+  // the feature is deployed after a service has already started, the sample
+  // is created/continued as soon as the active report is PICKED_UP/IN_TRANSIT.
+  useEffect(() => {
+    if (!activeReport?.id || !agentId || !isPunchedIn || shift?.live_tracking_consent !== true) {
+      return;
+    }
+    const context = getRouteLearningContext(activeReport);
+    if (!context) return;
+
+    const bootstrapKey = `${activeReport.id}:${context.direction}:${context.origin}:${context.destination}`;
+    if (routeBootstrapRef.current === bootstrapKey) return;
+    routeBootstrapRef.current = bootstrapKey;
+
+    initializePassiveRouteSample({
+      report: activeReport,
+      origin: context.origin,
+      destination: context.destination,
+      direction: context.direction,
+    }).catch((routeError) => {
+      routeBootstrapRef.current = "";
+      console.warn("Passive route sample bootstrap failed:", routeError);
+    });
+  }, [
+    activeReport?.id,
+    activeReport?.service_status,
+    activeReport?.tracking_status,
+    activeReport?.ib_status,
+    activeReport?.pickup_location,
+    activeReport?.ib_destination,
+    activeReport?.gate,
+    activeReport?.gate_location,
+    agentId,
+    isPunchedIn,
+    shift?.live_tracking_consent,
+  ]);
 
   const assignmentOver30 =
     assignmentMinutes >= 30 &&
@@ -4721,3 +4766,5 @@ export default function WchrAgentOperationsPage() {
     </div>
   );
 }
+
+// END WchrAgentOperationsPage.jsx
