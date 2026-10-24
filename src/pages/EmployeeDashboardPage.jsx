@@ -21,6 +21,7 @@ import {
 } from "../config/appConfig.js";
 import { triggerDashboardEventRsvpPush } from "../utils/dashboardEventPush.js";
 import LiveFlightsPanel from "../components/LiveFlightsPanel.jsx";
+import AirportWeatherPanel from "../components/AirportWeatherPanel.jsx";
 
 function getDefaultPosition(role) {
   if (role === "station_manager") return "Station Manager";
@@ -3172,6 +3173,10 @@ export default function EmployeeDashboardPage() {
 
       <div style={{ marginBottom: 16 }}>
         <LiveFlightsPanel compact={isMobile} maxItems={4} />
+      </div>
+
+      <div style={{ marginBottom: isMobile ? 10 : 16 }}>
+        <AirportWeatherPanel compact={isMobile} maxItems={4} />
       </div>
 
       <div
