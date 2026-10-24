@@ -545,7 +545,7 @@ function getAirlineTurnRules(airline) {
 
   if (airline === "AV") {
     return {
-      minTurnMinutes: 85,
+      minTurnMinutes: 80,
       boardingOffsetMinutes: 15,
     };
   }
@@ -855,7 +855,8 @@ function buildPrintableGateChecklistHtml({
           <div class="grid">
             ${card("IN / Block In", form.blockIn)}
             ${card("ON / Wheels On", form.actualArrivalTime)}
-            ${card("Actual Departure", form.actualDepartureTime)}
+            ${card("OUT / Actual Departure", form.actualDepartureTime)}
+            ${card("AIRBORNE / OFF", form.airborneTime)}
             ${card("Brake Release", form.brakeReleaseTime)}
             ${card("Push Time", form.pushTime)}
             ${card("GPU Connected", form.gpuConnected)}
@@ -964,6 +965,7 @@ function createInitialForm(user) {
     newStd: "",
     boardingDeadline: "",
     actualDepartureTime: "",
+    airborneTime: "",
     actualArrivalTime: "",
     gpuConnected: "",
     gateAgent1Arrival: "",
@@ -998,6 +1000,7 @@ function hasChecklistDependentData(form, specials, gateCheck, delayAnnouncements
     "newStd",
     "boardingDeadline",
     "actualDepartureTime",
+    "airborneTime",
     "actualArrivalTime",
     "gpuConnected",
     "gateAgent1Arrival",
@@ -1079,6 +1082,9 @@ export default function GateChecklistPage() {
     staSource: "",
     actualOnSource: "",
     actualInSource: "",
+    outboundActualSource: "",
+    inboundFlightNumber: "",
+    inboundWatchId: "",
     lastSync: "",
   });
 
@@ -1126,14 +1132,20 @@ export default function GateChecklistPage() {
 
         const std = toTampaClock(match.std || match.scheduledOut);
         const sta = toTampaClock(match.sta || match.scheduledIn);
-        const actualOn = toTampaClock(match.actualOn || match.ata);
-        const actualIn = toTampaClock(match.actualIn || match.gateArrivedAt);
+        const outboundActual = toTampaClock(match.actualOut);
+        const outboundAirborne = toTampaClock(match.actualOff || match.atd);
+        const linkedInboundFlightNumber = normalizeFlightNumber(match.linkedInboundFlightNumber || "");
+        const inboundMatch = linkedInboundFlightNumber
+          ? rows.find((row) => normalizeFlightNumber(row.flightNumber) === linkedInboundFlightNumber)
+          : null;
+        const actualIn = toTampaClock(inboundMatch?.actualIn || inboundMatch?.gateArrivedAt);
 
         setForm((prev) => ({
           ...prev,
           ...(std ? { std } : {}),
           ...(sta ? { sta } : {}),
-          ...(actualOn ? { actualArrivalTime: actualOn } : {}),
+          ...(outboundActual ? { actualDepartureTime: outboundActual } : {}),
+          ...(outboundAirborne ? { airborneTime: outboundAirborne } : {}),
           ...(actualIn ? { blockIn: actualIn } : {}),
           ...(!prev.origin && match.origin ? { origin: match.origin } : {}),
           ...(!prev.destination && match.destination ? { destination: match.destination } : {}),
@@ -1148,8 +1160,11 @@ export default function GateChecklistPage() {
           status: String(match.status || "MONITORING"),
           stdSource: std ? (match.scheduleProvider || "Flight Watch") : "",
           staSource: sta ? (match.scheduleProvider || "Flight Watch") : "",
-          actualOnSource: actualOn ? (match.actualOnSource || "Flightradar24") : "",
-          actualInSource: actualIn ? (match.actualInSource || "AeroDataBox") : "",
+          actualOnSource: "",
+          actualInSource: actualIn ? (inboundMatch?.actualInSource || "AeroDataBox gate time") : "",
+          outboundActualSource: outboundActual ? (match.actualOutSource || "AeroDataBox gate time") : "",
+          inboundFlightNumber: linkedInboundFlightNumber || "",
+          inboundWatchId: inboundMatch?.id || "",
           lastSync: match.syncedAt || match.updatedAt || "",
         });
       },
@@ -1182,6 +1197,24 @@ export default function GateChecklistPage() {
       };
     });
   }, [form.airline, form.blockIn, form.std]);
+
+  useEffect(() => {
+    const stdMinutes = toMinutesFromTime(form.std);
+    const actualOutMinutesRaw = toMinutesFromTime(form.actualDepartureTime);
+    if (stdMinutes === null || actualOutMinutesRaw === null) return;
+
+    let actualOutMinutes = actualOutMinutesRaw;
+    if (actualOutMinutes < stdMinutes - 360) actualOutMinutes += 24 * 60;
+    const variance = actualOutMinutes - stdMinutes;
+    const delayMinutes = Math.max(0, variance);
+
+    setForm((prev) => {
+      const nextDelay = delayMinutes > 0 ? "Yes" : "No";
+      const nextDelayMinutes = delayMinutes > 0 ? String(delayMinutes) : "0";
+      if (prev.delay === nextDelay && String(prev.delayTimeMinutes || "") === nextDelayMinutes) return prev;
+      return { ...prev, delay: nextDelay, delayTimeMinutes: nextDelayMinutes };
+    });
+  }, [form.std, form.actualDepartureTime]);
 
   function getTaskActualValue(task, sectionIndex, taskIndex) {
     const mappedField = getMappedTaskField(task);
@@ -1230,6 +1263,7 @@ export default function GateChecklistPage() {
       newStd: "",
       boardingDeadline: "",
       actualDepartureTime: "",
+      airborneTime: "",
       actualArrivalTime: "",
       gpuConnected: "",
       gateAgent1Arrival: "",
@@ -1259,7 +1293,7 @@ export default function GateChecklistPage() {
     setGateCheck(createInitialGateCheck());
     setDelayAnnouncements(["", "", "", ""]);
     setActuals({});
-    setFlightWatchSync({ id: "", matched: false, status: "", stdSource: "", staSource: "", actualOnSource: "", actualInSource: "", lastSync: "" });
+    setFlightWatchSync({ id: "", matched: false, status: "", stdSource: "", staSource: "", actualOnSource: "", actualInSource: "", outboundActualSource: "", inboundFlightNumber: "", inboundWatchId: "", lastSync: "" });
     setStatusMessage("");
   }
 
@@ -1426,9 +1460,13 @@ export default function GateChecklistPage() {
       staSource: flightWatchSync.staSource || "",
       actualOnSource: flightWatchSync.actualOnSource || "",
       actualInSource: flightWatchSync.actualInSource || "",
+      outboundActualSource: flightWatchSync.outboundActualSource || "",
+      linkedInboundFlightNumber: flightWatchSync.inboundFlightNumber || "",
+      linkedInboundFlightWatchId: flightWatchSync.inboundWatchId || "",
       autoSyncedAt: flightWatchSync.matched ? serverTimestamp() : null,
       boardingDeadline: form.boardingDeadline || "",
       actualDepartureTime: form.actualDepartureTime || "",
+      airborneTime: form.airborneTime || "",
       actualArrivalTime: form.actualArrivalTime || "",
       pushTime: form.pushTime || "",
       brakeReleaseTime: form.brakeReleaseTime || "",
@@ -1666,6 +1704,7 @@ export default function GateChecklistPage() {
         newStd: data.newStd || data.newEtd || "",
         boardingDeadline: data.boardingDeadline || "",
         actualDepartureTime: data.actualDepartureTime || "",
+        airborneTime: data.airborneTime || data.actualOffTime || "",
         actualArrivalTime: data.actualArrivalTime || "",
         gpuConnected: data.gpuConnected || "",
         gateAgent1Arrival: data.gateAgent1Arrival || "",
@@ -1716,6 +1755,9 @@ export default function GateChecklistPage() {
         staSource: data.staSource || "",
         actualOnSource: data.actualOnSource || "",
         actualInSource: data.actualInSource || "",
+        outboundActualSource: data.outboundActualSource || "",
+        inboundFlightNumber: data.linkedInboundFlightNumber || "",
+        inboundWatchId: data.linkedInboundFlightWatchId || "",
         lastSync: data.autoSyncedAt || "",
       });
 
@@ -2245,7 +2287,7 @@ export default function GateChecklistPage() {
                 fontSize: 11,
                 fontWeight: 700,
               }}>
-                ✈️ Flight Watch connected · STD/STA auto-sync · ON from {flightWatchSync.actualOnSource || "provider when available"} · IN from {flightWatchSync.actualInSource || "AeroDataBox gate time when available"}
+                ✈️ Aircraft Turn connected · Outbound STD/OUT from Flight Watch{flightWatchSync.inboundFlightNumber ? ` · Inbound ${flightWatchSync.inboundFlightNumber} IN feeds turnaround` : " · Link an inbound flight in Flight Watch to auto-fill IN"}
               </div>
             )}
 
@@ -2428,7 +2470,7 @@ export default function GateChecklistPage() {
               </div>
 
               <div>
-                <FieldLabel className="print-label">Actual Departure Time</FieldLabel>
+                <FieldLabel className="print-label">OUT / Actual Departure</FieldLabel>
                 <TimeInput
                   value={form.actualDepartureTime}
                   disabled={!canEdit || !stdUnlocked}
@@ -2439,11 +2481,19 @@ export default function GateChecklistPage() {
               </div>
 
               <div>
-                <FieldLabel className="print-label">ON / Wheels On</FieldLabel>
+                <FieldLabel className="print-label">AIRBORNE / OFF</FieldLabel>
                 <TimeInput
-                  value={form.actualArrivalTime}
+                  value={form.airborneTime}
                   disabled={!canEdit || !stdUnlocked}
-                  onChange={(e) => updateField("actualArrivalTime", e.target.value)}
+                  onChange={(e) => updateField("airborneTime", e.target.value)}
+                />
+              </div>
+
+              <div>
+                <FieldLabel className="print-label">Inbound Turn</FieldLabel>
+                <TextInput
+                  value={flightWatchSync.inboundFlightNumber || "Not linked"}
+                  disabled
                 />
               </div>
 
