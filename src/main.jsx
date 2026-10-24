@@ -104,6 +104,7 @@ import CierreVueloManagement from "./pages/CierreVueloManagement.jsx";
 import BSODailyReportPage from "./pages/BSODailyReportPage.jsx";
 import BSODailyManagementPage from "./pages/BSODailyManagementPage.jsx";
 import PassengerFeedbackManagementPage from "./pages/PassengerFeedbackManagementPage.jsx";
+import FlightWatchManagementPage from "./pages/FlightWatchManagementPage.jsx";
 
 
 // ============================================================
@@ -535,6 +536,15 @@ function AppRouter() {
           <Route path="profile" element={<ProfilePage />} />
           <Route path="messages" element={<MessagesPage />} />
           <Route path="notifications" element={<NotificationsPage />} />
+
+          <Route
+            path="flight-watch"
+            element={
+              <ProtectedRoute roles={["duty_manager", "station_manager"]}>
+                <FlightWatchManagementPage />
+              </ProtectedRoute>
+            }
+          />
 
           <Route
             path="station-team"
