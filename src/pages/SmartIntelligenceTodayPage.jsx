@@ -55,6 +55,7 @@ export default function SmartIntelligenceTodayPage() {
   const [summary, setSummary] = useState(null);
   const [selectingSupervisorFor, setSelectingSupervisorFor] = useState("");
   const [closingPackageId, setClosingPackageId] = useState("");
+  const [dutyUsers, setDutyUsers] = useState([]);
 
   const runEngine = async () => {
     try {
@@ -104,6 +105,45 @@ export default function SmartIntelligenceTodayPage() {
     });
     return () => unsub();
   }, [user?.id, user?.role, dateKey]);
+
+
+
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, "users"), (snap) => {
+      const next = snap.docs
+        .map((item) => ({ id: item.id, ...item.data() }))
+        .filter((item) => String(item.role || "").trim().toLowerCase() === "duty_manager")
+        .sort((a, b) => clean(a.displayName || a.fullName || a.name || a.username).localeCompare(clean(b.displayName || b.fullName || b.name || b.username)));
+      setDutyUsers(next);
+    });
+    return () => unsub();
+  }, []);
+
+  const dutyDiagnostics = useMemo(() => {
+    const now = Date.now();
+    return dutyUsers.map((item) => {
+      const rawSeen = item.smartDutyLastSeen || item.lastActivityAt || item.lastSeenAt || item.updatedAt;
+      const seenDate = rawSeen?.toDate ? rawSeen.toDate() : rawSeen?.seconds ? new Date(rawSeen.seconds * 1000) : rawSeen ? new Date(rawSeen) : null;
+      const ageMinutes = seenDate && !Number.isNaN(seenDate.getTime()) ? Math.max(0, Math.round((now - seenDate.getTime()) / 60000)) : null;
+      const available = item.smartDutyAvailable === true;
+      const status = String(item.smartDutyStatus || "").trim().toUpperCase();
+      const fresh = ageMinutes !== null && ageMinutes <= 75;
+      const eligible = available && (status === "AVAILABLE" || !status) && fresh;
+      let reason = "Eligible for assignments";
+      if (!available) reason = "smartDutyAvailable is not ON";
+      else if (status && status !== "AVAILABLE") reason = `Status: ${status}`;
+      else if (ageMinutes === null) reason = "No recent Smart Duty heartbeat";
+      else if (!fresh) reason = `Last activity is ${ageMinutes} min old`;
+      return {
+        ...item,
+        visibleName: item.displayName || item.fullName || item.name || item.username || "Duty Manager",
+        ageMinutes,
+        seenDate,
+        eligible,
+        reason,
+      };
+    });
+  }, [dutyUsers]);
 
   const handleSelectSupervisor = async (row, supervisor) => {
     if (!row?.id || !supervisor?.userId) return;
@@ -197,6 +237,38 @@ export default function SmartIntelligenceTodayPage() {
         <Card><div style={{ fontSize: 12, color: "#64748b", fontWeight: 800 }}>Waiting Reviewer</div><div style={{ fontSize: 28, fontWeight: 950, color: waiting.length ? "#b45309" : "#15803d" }}>{waiting.length}</div></Card>
         {summary && <Card><div style={{ fontSize: 12, color: "#64748b", fontWeight: 800 }}>Active Duty Managers</div><div style={{ fontSize: 28, fontWeight: 950 }}>{summary.activeDutyManagers?.length || 0}</div></Card>}
       </div>
+
+      <Card>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
+          <div>
+            <h2 style={{ margin: 0, fontSize: 19 }}>Active Duty Managers</h2>
+            <div style={{ marginTop: 4, fontSize: 12.5, color: "#64748b" }}>Smart Intelligence eligibility diagnostic · 75 minute activity window</div>
+          </div>
+          <span style={{ borderRadius: 999, padding: "6px 10px", fontSize: 12, fontWeight: 900, background: dutyDiagnostics.some((item) => item.eligible) ? "#dcfce7" : "#fee2e2", color: dutyDiagnostics.some((item) => item.eligible) ? "#166534" : "#b91c1c" }}>
+            {dutyDiagnostics.filter((item) => item.eligible).length} eligible
+          </span>
+        </div>
+        {dutyDiagnostics.length === 0 ? (
+          <div style={{ color: "#64748b", fontSize: 13 }}>No Duty Manager users found.</div>
+        ) : (
+          <div style={{ display: "grid", gap: 8 }}>
+            {dutyDiagnostics.map((item) => (
+              <div key={item.id} style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap", padding: "10px 12px", borderRadius: 12, border: item.eligible ? "1px solid #bbf7d0" : "1px solid #fed7aa", background: item.eligible ? "#f0fdf4" : "#fff7ed" }}>
+                <div>
+                  <div style={{ fontWeight: 900, color: "#0f172a" }}>{item.visibleName}</div>
+                  <div style={{ marginTop: 3, fontSize: 11.5, color: "#64748b" }}>
+                    {item.smartDutyStatus || "No status"} · {item.ageMinutes === null ? "No heartbeat" : `Last activity ${item.ageMinutes} min ago`}
+                  </div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontSize: 11.5, fontWeight: 900, color: item.eligible ? "#15803d" : "#b45309" }}>{item.eligible ? "ELIGIBLE" : "NOT ELIGIBLE"}</div>
+                  <div style={{ marginTop: 2, fontSize: 11, color: "#64748b" }}>{item.reason}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
 
       <Card>
         <h2 style={{ margin: "0 0 12px", fontSize: 19 }}>Daily Review Assignments</h2>
