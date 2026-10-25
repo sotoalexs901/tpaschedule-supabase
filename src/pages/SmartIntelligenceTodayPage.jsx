@@ -122,18 +122,48 @@ export default function SmartIntelligenceTodayPage() {
   const dutyDiagnostics = useMemo(() => {
     const now = Date.now();
     return dutyUsers.map((item) => {
-      const rawSeen = item.smartDutyLastSeen || item.lastActivityAt || item.lastSeenAt || item.updatedAt;
+      const rawSeen =
+        item.smartDutyLastSeen ||
+        item.lastActivityAt ||
+        item.lastActiveAt ||
+        item.lastSeenAt ||
+        item.lastSeen ||
+        item.lastActivity ||
+        item.presenceUpdatedAt ||
+        item.updatedAt;
       const seenDate = rawSeen?.toDate ? rawSeen.toDate() : rawSeen?.seconds ? new Date(rawSeen.seconds * 1000) : rawSeen ? new Date(rawSeen) : null;
       const ageMinutes = seenDate && !Number.isNaN(seenDate.getTime()) ? Math.max(0, Math.round((now - seenDate.getTime()) / 60000)) : null;
-      const available = item.smartDutyAvailable === true;
-      const status = String(item.smartDutyStatus || "").trim().toUpperCase();
+
+      const smartStatus = String(item.smartDutyStatus || "").trim().toUpperCase();
+      const presenceStatus = String(
+        item.status || item.presenceStatus || item.onlineStatus || item.activityStatus || item.presence || ""
+      ).trim().toUpperCase();
+
+      const smartAvailable = item.smartDutyAvailable === true || smartStatus === "AVAILABLE";
+      const presenceOnline =
+        item.online === true ||
+        item.isOnline === true ||
+        presenceStatus === "ONLINE" ||
+        presenceStatus === "ACTIVE" ||
+        presenceStatus === "AVAILABLE";
+
+      const explicitlyOffline =
+        smartStatus === "OFFLINE" ||
+        smartStatus === "UNAVAILABLE" ||
+        presenceStatus === "OFFLINE" ||
+        presenceStatus === "LOGGED_OUT" ||
+        item.online === false ||
+        item.isOnline === false;
+
       const fresh = ageMinutes !== null && ageMinutes <= 75;
-      const eligible = available && (status === "AVAILABLE" || !status) && fresh;
+      const eligible = !explicitlyOffline && fresh && (presenceOnline || smartAvailable);
+
       let reason = "Eligible for assignments";
-      if (!available) reason = "smartDutyAvailable is not ON";
-      else if (status && status !== "AVAILABLE") reason = `Status: ${status}`;
-      else if (ageMinutes === null) reason = "No recent Smart Duty heartbeat";
+      if (explicitlyOffline) reason = "AeroStation presence is OFFLINE";
+      else if (ageMinutes === null) reason = "No recent AeroStation activity timestamp";
       else if (!fresh) reason = `Last activity is ${ageMinutes} min old`;
+      else if (!presenceOnline && !smartAvailable) reason = "No ONLINE presence signal";
+
       return {
         ...item,
         visibleName: item.displayName || item.fullName || item.name || item.username || "Duty Manager",
@@ -141,6 +171,7 @@ export default function SmartIntelligenceTodayPage() {
         seenDate,
         eligible,
         reason,
+        diagnosticStatus: presenceOnline ? "ONLINE" : smartStatus || presenceStatus || "No status",
       };
     });
   }, [dutyUsers]);
@@ -257,7 +288,7 @@ export default function SmartIntelligenceTodayPage() {
                 <div>
                   <div style={{ fontWeight: 900, color: "#0f172a" }}>{item.visibleName}</div>
                   <div style={{ marginTop: 3, fontSize: 11.5, color: "#64748b" }}>
-                    {item.smartDutyStatus || "No status"} · {item.ageMinutes === null ? "No heartbeat" : `Last activity ${item.ageMinutes} min ago`}
+                    {item.diagnosticStatus} · {item.ageMinutes === null ? "No activity timestamp" : `Last activity ${item.ageMinutes} min ago`}
                   </div>
                 </div>
                 <div style={{ textAlign: "right" }}>
