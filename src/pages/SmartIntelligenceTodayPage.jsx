@@ -251,9 +251,9 @@ export default function SmartIntelligenceTodayPage() {
               <div key={alert.id} style={{ border: "1px solid #fecaca", background: "#fff7f7", borderRadius: 12, padding: 12 }}>
                 <div style={{ fontWeight: 900, color: "#991b1b" }}>{alert.title}</div>
                 <div style={{ marginTop: 4, color: "#475569", fontSize: 12.5, lineHeight: 1.45 }}>{alert.message}</div>
-                {user?.role === "station_manager" && (
+                {(user?.role === "station_manager" || user?.role === "duty_manager") && (
                   <button type="button" onClick={() => handleAcknowledge(alert)} style={{ marginTop: 8, border: "1px solid #cbd5e1", background: "#fff", borderRadius: 9, padding: "6px 9px", fontWeight: 800, cursor: "pointer" }}>
-                    Acknowledge
+                    Mark as seen
                   </button>
                 )}
               </div>
