@@ -63,18 +63,56 @@ function stableHash(value) {
 
 function isDutyManagerFresh(user, nowMs = Date.now()) {
   if (upper(user?.role) !== "DUTY_MANAGER") return false;
-  if (user?.smartDutyAvailable !== true) return false;
-  if (upper(user?.smartDutyStatus || "AVAILABLE") !== "AVAILABLE") return false;
+
+  const smartStatus = upper(user?.smartDutyStatus);
+  const presenceStatus = upper(
+    user?.status ||
+    user?.presenceStatus ||
+    user?.onlineStatus ||
+    user?.activityStatus ||
+    user?.presence
+  );
+
+  const explicitlyOffline =
+    smartStatus === "OFFLINE" ||
+    smartStatus === "UNAVAILABLE" ||
+    presenceStatus === "OFFLINE" ||
+    presenceStatus === "LOGGED_OUT" ||
+    user?.online === false ||
+    user?.isOnline === false;
+
+  if (explicitlyOffline) return false;
 
   const lastSeen =
     toDate(user?.smartDutyLastSeen) ||
     toDate(user?.lastActivityAt) ||
+    toDate(user?.lastActiveAt) ||
     toDate(user?.lastSeenAt) ||
+    toDate(user?.lastSeen) ||
+    toDate(user?.lastActivity) ||
+    toDate(user?.presenceUpdatedAt) ||
     toDate(user?.updatedAt);
 
   if (!lastSeen) return false;
+
   const ageMinutes = (nowMs - lastSeen.getTime()) / 60000;
-  return ageMinutes >= -5 && ageMinutes <= DUTY_FRESH_MINUTES;
+  const fresh = ageMinutes >= -5 && ageMinutes <= DUTY_FRESH_MINUTES;
+  if (!fresh) return false;
+
+  const smartAvailable =
+    user?.smartDutyAvailable === true ||
+    smartStatus === "AVAILABLE";
+
+  const existingPresenceOnline =
+    user?.online === true ||
+    user?.isOnline === true ||
+    presenceStatus === "ONLINE" ||
+    presenceStatus === "ACTIVE" ||
+    presenceStatus === "AVAILABLE";
+
+  // Use AeroStation's existing presence as the primary signal.
+  // Smart Duty fields remain supported, but are no longer mandatory.
+  return smartAvailable || existingPresenceOnline;
 }
 
 
