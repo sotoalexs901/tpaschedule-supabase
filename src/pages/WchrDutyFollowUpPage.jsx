@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import {
+  arrayUnion,
   collection,
   doc,
   getDoc,
@@ -196,6 +197,11 @@ function ActionButton({
       color: "#fff",
       border: "none",
     },
+    danger: {
+      background: "#dc2626",
+      color: "#fff",
+      border: "none",
+    },
   };
 
   return (
@@ -289,6 +295,7 @@ export default function WchrDutyFollowUpPage() {
   const [loading, setLoading] = useState(true);
   const [loadingReports, setLoadingReports] = useState(false);
   const [completing, setCompleting] = useState(false);
+  const [removingReportId, setRemovingReportId] = useState("");
   const [filter, setFilter] = useState("OPEN");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -440,9 +447,10 @@ export default function WchrDutyFollowUpPage() {
   }, [reportDetails]);
 
   const allResolved =
-    reportDetails.length > 0 &&
-    liveSummary.stored ===
-      reportDetails.length;
+    (reportDetails.length === 0 &&
+      Number(selectedClosure?.unresolvedCount || 0) === 0) ||
+    (reportDetails.length > 0 &&
+      liveSummary.stored === reportDetails.length);
 
   const loadReportDetails =
     async (closure) => {
@@ -541,6 +549,105 @@ export default function WchrDutyFollowUpPage() {
       );
     };
 
+
+  const handleRemoveErroneousWchr = async (report) => {
+    if (!selectedClosure || !canComplete || !report?.id) {
+      return;
+    }
+
+    if (report.exists !== false && safeUpper(report.currentStatus) !== "MISSING") {
+      setError("Only missing/invalid WCHR records can be removed from Duty Follow-Up.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Remove this erroneous WCHR from the ${selectedClosure.operationalDate || selectedClosure.id} Duty Follow-Up?\n\nThis only removes the invalid reference from the operational closure. The action will be recorded for audit.`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setRemovingReportId(report.id);
+      setError("");
+      setMessage("");
+
+      const closureRef = doc(
+        db,
+        "wchr_operational_closures",
+        selectedClosure.id
+      );
+
+      const freshSnap = await getDoc(closureRef);
+
+      if (!freshSnap.exists()) {
+        throw new Error("Operational closure no longer exists.");
+      }
+
+      const freshClosure = freshSnap.data() || {};
+      const currentIds = Array.isArray(freshClosure.unresolvedReportIds)
+        ? freshClosure.unresolvedReportIds.filter(Boolean)
+        : [];
+
+      const nextIds = currentIds.filter(
+        (id) => safeText(id) !== safeText(report.id)
+      );
+
+      if (nextIds.length === currentIds.length) {
+        setMessage("This WCHR reference was already removed from the closure.");
+      } else {
+        await updateDoc(closureRef, {
+          unresolvedReportIds: nextIds,
+          unresolvedCount: nextIds.length,
+          requiresDutyFollowUp: true,
+          dutyFollowUpCorrections: arrayUnion({
+            action: "REMOVE_ERRONEOUS_WCHR",
+            reportId: report.id,
+            reason: "Referenced WCHR report no longer exists / was created in error",
+            removedByUserId: currentUserId,
+            removedByName: currentUserName,
+            removedByRole: safeText(user?.role),
+            removedAt: new Date().toISOString(),
+          }),
+          dutyFollowUpLastCorrectedByUserId: currentUserId,
+          dutyFollowUpLastCorrectedByName: currentUserName,
+          dutyFollowUpLastCorrectedAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+
+        setReportDetails((previous) =>
+          previous.filter((item) => item.id !== report.id)
+        );
+
+        setClosures((previous) =>
+          previous.map((item) =>
+            item.id === selectedClosure.id
+              ? {
+                  ...item,
+                  unresolvedReportIds: nextIds,
+                  unresolvedCount: nextIds.length,
+                  dutyFollowUpLastCorrectedByName: currentUserName,
+                }
+              : item
+          )
+        );
+
+        setMessage(
+          nextIds.length === 0
+            ? "Erroneous WCHR removed. No pending WCHR references remain; you can now complete the follow-up."
+            : `Erroneous WCHR removed. ${nextIds.length} pending WCHR reference${nextIds.length === 1 ? " remains" : "s remain"}.`
+        );
+      }
+    } catch (removeError) {
+      console.error("Error removing erroneous WCHR from follow-up:", removeError);
+      setError(
+        removeError?.message ||
+          "Could not remove the erroneous WCHR from Duty Follow-Up."
+      );
+    } finally {
+      setRemovingReportId("");
+    }
+  };
+
   const handleCompleteFollowUp =
     async () => {
       if (
@@ -550,7 +657,10 @@ export default function WchrDutyFollowUpPage() {
         return;
       }
 
-      if (!reportDetails.length) {
+      if (
+        !reportDetails.length &&
+        Number(selectedClosure?.unresolvedCount || 0) > 0
+      ) {
         setError(
           "Load the pending WCHR details before completing follow-up."
         );
@@ -1280,13 +1390,40 @@ export default function WchrDutyFollowUpPage() {
                             </div>
                           </div>
 
-                          <span
-                            style={statusBadge(
-                              report.currentStatus
-                            )}
+                          <div
+                            style={{
+                              display: "flex",
+                              gap: 8,
+                              alignItems: "center",
+                              flexWrap: "wrap",
+                            }}
                           >
-                            {report.currentStatus}
-                          </span>
+                            <span
+                              style={statusBadge(
+                                report.currentStatus
+                              )}
+                            >
+                              {report.currentStatus}
+                            </span>
+
+                            {canComplete &&
+                              report.exists === false &&
+                              safeUpper(report.currentStatus) === "MISSING" && (
+                                <ActionButton
+                                  variant="danger"
+                                  onClick={() =>
+                                    handleRemoveErroneousWchr(report)
+                                  }
+                                  disabled={
+                                    removingReportId === report.id
+                                  }
+                                >
+                                  {removingReportId === report.id
+                                    ? "Removing..."
+                                    : "Remove Erroneous WCHR"}
+                                </ActionButton>
+                              )}
+                          </div>
                         </div>
 
                         <div
