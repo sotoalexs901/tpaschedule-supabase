@@ -11,6 +11,7 @@ import { db } from "../firebase";
 export const SMART_RULES_COLLECTION = "smart_intelligence_department_rules";
 export const SMART_ASSIGNMENTS_COLLECTION = "smart_intelligence_daily_assignments";
 export const SMART_AUDIT_COLLECTION = "smart_intelligence_audit";
+export const SMART_ALERTS_COLLECTION = "smart_intelligence_alerts";
 
 const DUTY_FRESH_MINUTES = 75;
 
@@ -391,13 +392,94 @@ async function appendAudit({ dateKey, rule, assignment, actor }) {
   });
 }
 
+
+function reviewIsComplete(assignment) {
+  const status = upper(
+    assignment?.packageReviewStatus ||
+    assignment?.reviewStatus ||
+    assignment?.packageStatus
+  );
+  return status === "COMPLETED" || status === "REVIEW_COMPLETE" || status === "CLOSED";
+}
+
+function chooseLeastLoaded(pool, loadMap) {
+  if (!Array.isArray(pool) || !pool.length) return null;
+  return [...pool].sort((a, b) => {
+    const aLoad = Number(loadMap.get(a.id) || 0);
+    const bLoad = Number(loadMap.get(b.id) || 0);
+    if (aLoad !== bLoad) return aLoad - bLoad;
+    return visibleName(a).localeCompare(visibleName(b)) || String(a.id).localeCompare(String(b.id));
+  })[0];
+}
+
+async function writeAssignmentNotice({ dateKey, rule, selected, previousAssigneeId = "", previousAssigneeName = "", reassigned = false }) {
+  const key = `${dateKey}__${slug(rule.id || rule.department)}__assignment_notice`;
+
+  if (previousAssigneeId && previousAssigneeId !== selected?.id) {
+    await setDoc(
+      doc(db, SMART_ALERTS_COLLECTION, `${key}__${previousAssigneeId}`),
+      { active: false, updatedAt: serverTimestamp() },
+      { merge: true }
+    );
+  }
+
+  if (!selected?.id) return;
+
+  const selectedRole = upper(selected.role) === "STATION_MANAGER" ? "station_manager" : "duty_manager";
+  await setDoc(
+    doc(db, SMART_ALERTS_COLLECTION, `${key}__${selected.id}`),
+    {
+      active: true,
+      dateKey,
+      department: rule.department,
+      ruleId: rule.id,
+      targetUserId: selected.id,
+      targetRole: selectedRole,
+      audience: selectedRole === "station_manager" ? "STATION_MANAGER" : "DUTY_MANAGER",
+      alertType: reassigned ? "DEPARTMENT_REASSIGNED" : "DEPARTMENT_ASSIGNED",
+      severity: "NORMAL",
+      title: `${rule.department}: assigned to you`,
+      message: reassigned
+        ? `${rule.department} has been reassigned to you by Smart Intelligence for today's report review.`
+        : `${rule.department} has been assigned to you by Smart Intelligence for today's report review.`,
+      previousAssigneeId: previousAssigneeId || "",
+      previousAssigneeName: previousAssigneeName || "",
+      source: "smart_assignment_engine_balanced_v3",
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
+}
+
+async function appendReassignmentAudit({ dateKey, rule, previous, next, actor }) {
+  await setDoc(
+    doc(db, SMART_AUDIT_COLLECTION, `${dateKey}__${slug(rule.id || rule.department)}__reassigned_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`),
+    {
+      eventType: "DAILY_REVIEW_ASSIGNMENT_REBALANCED",
+      dateKey,
+      ruleId: rule.id,
+      department: rule.department,
+      previousDutyManagerId: previous?.assignedDutyManagerId || "",
+      previousDutyManagerName: previous?.assignedDutyManagerName || "",
+      assignedDutyManagerId: next?.assignedDutyManagerId || "",
+      assignedDutyManagerName: next?.assignedDutyManagerName || "",
+      createdAt: serverTimestamp(),
+      actorId: actor?.id || "",
+      actorName: actor ? visibleName(actor) : "Smart Intelligence",
+      source: "smart_assignment_engine_balanced_v3",
+    }
+  );
+}
+
 export async function ensureDailySmartAssignments({ actor } = {}) {
   const dateKey = tampaDateKey();
-  const [rulesSnap, usersSnap, employeesSnap, schedulesSnap] = await Promise.all([
+  const [rulesSnap, usersSnap, employeesSnap, schedulesSnap, assignmentsSnap] = await Promise.all([
     getDocs(collection(db, SMART_RULES_COLLECTION)),
     getDocs(collection(db, "users")),
     getDocs(collection(db, "employees")),
     getDocs(collection(db, "schedules")),
+    getDocs(collection(db, SMART_ASSIGNMENTS_COLLECTION)),
   ]);
 
   const rules = rulesSnap.docs
@@ -408,30 +490,43 @@ export async function ensureDailySmartAssignments({ actor } = {}) {
   const allUsers = usersSnap.docs.map((item) => ({ id: item.id, ...item.data() }));
   const employees = employeesSnap.docs.map((item) => ({ id: item.id, ...item.data() }));
   const schedules = schedulesSnap.docs.map((item) => ({ id: item.id, ...item.data() }));
+  const existingById = new Map(
+    assignmentsSnap.docs
+      .map((item) => ({ id: item.id, ...item.data() }))
+      .filter((item) => clean(item.dateKey) === dateKey)
+      .map((item) => [item.id, item])
+  );
 
   const allDutyManagers = allUsers.filter((user) => upper(user.role) === "DUTY_MANAGER");
-
   const activeDutyManagers = allDutyManagers
     .filter((user) => isDutyManagerFresh(user))
     .sort((a, b) => visibleName(a).localeCompare(visibleName(b)) || a.id.localeCompare(b.id));
 
-  // A DM explicitly dedicated to one or more active department rules stays out
-  // of the general pool. This prevents Delta-specific Duty Managers from being
-  // automatically assigned SY/WL/AV/WCHR work.
   const dedicatedIds = new Set(
     rules.flatMap((rule) =>
       rule.reviewMode === "DEDICATED" ? rule.dedicatedDutyManagerIds : []
     )
   );
-
   const generalPool = activeDutyManagers.filter((user) => !dedicatedIds.has(user.id));
+
+  // Count only locked/completed packages first. Open auto-assigned packages are
+  // recalculated deterministically so the active workload stays balanced.
+  const loadByUserId = new Map(activeDutyManagers.map((user) => [user.id, 0]));
+  for (const rule of rules) {
+    const existing = existingById.get(assignmentId(dateKey, rule));
+    if (!existing || !clean(existing.assignedDutyManagerId) || !reviewIsComplete(existing)) continue;
+    if (loadByUserId.has(existing.assignedDutyManagerId)) {
+      loadByUserId.set(existing.assignedDutyManagerId, Number(loadByUserId.get(existing.assignedDutyManagerId) || 0) + 1);
+    }
+  }
+
   const results = [];
 
   for (const rule of rules) {
     const id = assignmentId(dateKey, rule);
     const ref = doc(db, SMART_ASSIGNMENTS_COLLECTION, id);
-    const existingSnap = await getDoc(ref);
-    const existing = existingSnap.exists() ? existingSnap.data() : null;
+    const existing = existingById.get(id) || null;
+
     const supervisorContext = resolveResponsibleSupervisors({
       rule,
       schedules,
@@ -442,42 +537,32 @@ export async function ensureDailySmartAssignments({ actor } = {}) {
     const primarySupervisor = supervisorContext.supervisors.length === 1
       ? supervisorContext.supervisors[0]
       : null;
+
+    // Preserve a manual responsible-supervisor choice when present.
     const supervisorPatch = {
       responsibleSupervisors: supervisorContext.supervisors,
       responsibleSupervisorNames: supervisorNames,
       responsibleSupervisorCount: supervisorContext.supervisors.length,
-      responsibleSupervisorId: primarySupervisor?.employeeId || "",
-      responsibleSupervisorUserId: primarySupervisor?.userId || "",
-      responsibleSupervisorName: primarySupervisor?.name || "",
-      responsibleSupervisorSource: supervisorContext.source,
+      responsibleSupervisorId: clean(existing?.responsibleSupervisorSelectedAt)
+        ? clean(existing?.responsibleSupervisorId)
+        : (primarySupervisor?.employeeId || ""),
+      responsibleSupervisorUserId: clean(existing?.responsibleSupervisorSelectedAt)
+        ? clean(existing?.responsibleSupervisorUserId)
+        : (primarySupervisor?.userId || ""),
+      responsibleSupervisorName: clean(existing?.responsibleSupervisorSelectedAt)
+        ? clean(existing?.responsibleSupervisorName)
+        : (primarySupervisor?.name || ""),
+      responsibleSupervisorSource: clean(existing?.responsibleSupervisorSelectedAt)
+        ? (existing?.responsibleSupervisorSource || "manual_selection_from_approved_schedule")
+        : supervisorContext.source,
       approvedScheduleIds: supervisorContext.scheduleIds,
       supervisorResolvedAt: serverTimestamp(),
     };
 
-    // Once a reviewer has been assigned for the date, keep the assignment stable,
-    // but refresh the Approved Schedule / supervisor context every run.
-    if (clean(existing?.assignedDutyManagerId)) {
+    // Closed/review-complete packages are audit-locked and never rebalanced.
+    if (existing && clean(existing.assignedDutyManagerId) && reviewIsComplete(existing)) {
       await setDoc(ref, { ...supervisorPatch, updatedAt: serverTimestamp() }, { merge: true });
-      const oldNames = Array.isArray(existing?.responsibleSupervisorNames)
-        ? existing.responsibleSupervisorNames.join("|")
-        : clean(existing?.responsibleSupervisorName);
-      const newNames = supervisorNames.join("|");
-      if (oldNames !== newNames && newNames) {
-        await setDoc(doc(db, SMART_AUDIT_COLLECTION, `${dateKey}__${slug(rule.id || rule.department)}__supervisor_${Date.now()}`), {
-          eventType: "RESPONSIBLE_SUPERVISOR_RESOLVED",
-          dateKey,
-          ruleId: rule.id,
-          department: rule.department,
-          responsibleSupervisorNames: supervisorNames,
-          responsibleSupervisors: supervisorContext.supervisors,
-          approvedScheduleIds: supervisorContext.scheduleIds,
-          createdAt: serverTimestamp(),
-          actorId: actor?.id || "",
-          actorName: actor ? visibleName(actor) : "Smart Intelligence",
-          source: "approved_schedule_plus_users",
-        });
-      }
-      results.push({ id, ...existing, ...supervisorPatch, preserved: true });
+      results.push({ id, ...existing, ...supervisorPatch, preserved: true, balanceLocked: true });
       continue;
     }
 
@@ -485,10 +570,7 @@ export async function ensureDailySmartAssignments({ actor } = {}) {
       ? activeDutyManagers.filter((user) => rule.dedicatedDutyManagerIds.includes(user.id))
       : generalPool;
 
-    const selectedDutyManager = pool.length
-      ? pool[stableHash(`${dateKey}|${rule.department}`) % pool.length]
-      : null;
-
+    const selectedDutyManager = chooseLeastLoaded(pool, loadByUserId);
     const fallbackStationManager =
       !selectedDutyManager && rule.fallbackToStationManager
         ? (
@@ -500,6 +582,9 @@ export async function ensureDailySmartAssignments({ actor } = {}) {
 
     const selected = selectedDutyManager || fallbackStationManager;
     const isStationManagerFallback = Boolean(fallbackStationManager && !selectedDutyManager);
+    const previousAssigneeId = clean(existing?.assignedDutyManagerId);
+    const previousAssigneeName = clean(existing?.assignedDutyManagerName);
+    const assigneeChanged = Boolean(selected?.id) && previousAssigneeId !== clean(selected.id);
 
     const payload = {
       dateKey,
@@ -521,9 +606,11 @@ export async function ensureDailySmartAssignments({ actor } = {}) {
       status: selected ? "ASSIGNED" : "WAITING_FOR_DUTY_MANAGER",
       assignmentSource: isStationManagerFallback
         ? "station_manager_fallback"
-        : "smart_assignment_engine_v2",
+        : "smart_assignment_engine_balanced_v3",
+      balancingStrategy: "least_loaded_active_pool",
+      rebalancedAt: assigneeChanged && previousAssigneeId ? serverTimestamp() : (existing?.rebalancedAt || null),
       updatedAt: serverTimestamp(),
-      ...(existingSnap.exists()
+      ...(existing
         ? {}
         : {
             createdAt: serverTimestamp(),
@@ -534,16 +621,29 @@ export async function ensureDailySmartAssignments({ actor } = {}) {
 
     await setDoc(ref, payload, { merge: true });
 
-    // Only audit the first creation or transition from waiting -> assigned.
-    const shouldAudit =
-      !existingSnap.exists() ||
-      (!clean(existing?.assignedDutyManagerId) && Boolean(selected));
-
-    if (shouldAudit) {
-      await appendAudit({ dateKey, rule, assignment: payload, actor });
+    if (selectedDutyManager?.id && loadByUserId.has(selectedDutyManager.id)) {
+      loadByUserId.set(selectedDutyManager.id, Number(loadByUserId.get(selectedDutyManager.id) || 0) + 1);
     }
 
-    results.push({ id, ...payload, preserved: false });
+    const firstAssignment = !previousAssigneeId && Boolean(selected?.id);
+    if (!existing || firstAssignment) {
+      await appendAudit({ dateKey, rule, assignment: payload, actor });
+    } else if (assigneeChanged) {
+      await appendReassignmentAudit({ dateKey, rule, previous: existing, next: payload, actor });
+    }
+
+    if ((firstAssignment || assigneeChanged) && selected?.id) {
+      await writeAssignmentNotice({
+        dateKey,
+        rule,
+        selected,
+        previousAssigneeId,
+        previousAssigneeName,
+        reassigned: Boolean(previousAssigneeId),
+      });
+    }
+
+    results.push({ id, ...payload, preserved: !assigneeChanged && Boolean(existing) });
   }
 
   return {
@@ -552,6 +652,7 @@ export async function ensureDailySmartAssignments({ actor } = {}) {
     activeDutyManagers,
     generalPool,
     dedicatedIds: [...dedicatedIds],
+    loadByUserId: Object.fromEntries(loadByUserId.entries()),
     assignments: results,
   };
 }
