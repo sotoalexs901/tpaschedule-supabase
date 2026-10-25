@@ -851,9 +851,19 @@ export default function AppLayout() {
             smartDutyLastSeen: new Date().toISOString(),
           }
         : {}),
-    }).catch((err) =>
-      console.error("Error updating user presence:", err)
-    );
+    })
+      .then(async () => {
+        if (user?.role !== "duty_manager") return;
+        try {
+          await ensureDailySmartAssignments({ actor: user });
+          await refreshSmartReportPackages({ actor: user });
+        } catch (error) {
+          console.error("Smart Intelligence instant Duty assignment failed:", error);
+        }
+      })
+      .catch((err) =>
+        console.error("Error updating user presence:", err)
+      );
   }, [user, location.pathname]);
 
   useEffect(() => {
