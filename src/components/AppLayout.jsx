@@ -842,19 +842,29 @@ export default function AppLayout() {
   useEffect(() => {
     if (!user?.id) return;
 
+    const nowIso = new Date().toISOString();
+
     updateUserPresence(user, {
       currentPage: location.pathname,
       ...(user?.role === "duty_manager"
         ? {
             smartDutyAvailable: true,
             smartDutyStatus: "AVAILABLE",
-            smartDutyLastSeen: new Date().toISOString(),
+            smartDutyLastSeen: nowIso,
           }
         : {}),
     })
       .then(async () => {
         if (user?.role !== "duty_manager") return;
         try {
+          await updateDoc(doc(db, "users", user.id), {
+            smartDutyAvailable: true,
+            smartDutyStatus: "AVAILABLE",
+            smartDutyLastSeen: nowIso,
+            smartDutyCurrentPage: location.pathname,
+            smartDutyPresenceSource: "AppLayout",
+            smartDutyUpdatedAt: serverTimestamp(),
+          });
           await ensureDailySmartAssignments({ actor: user });
           await refreshSmartReportPackages({ actor: user });
         } catch (error) {
@@ -882,12 +892,21 @@ export default function AppLayout() {
       // Do not mark a Duty Manager offline simply because the app is backgrounded.
       onInactive: () => {
         if (user?.role === "duty_manager") {
+          const nowIso = new Date().toISOString();
           updateUserPresence(user, {
             currentPage: location.pathname,
             smartDutyAvailable: true,
             smartDutyStatus: "AVAILABLE",
-            smartDutyBackgroundedAt: new Date().toISOString(),
-            smartDutyLastSeen: new Date().toISOString(),
+            smartDutyBackgroundedAt: nowIso,
+            smartDutyLastSeen: nowIso,
+          }).catch(() => {});
+          updateDoc(doc(db, "users", user.id), {
+            smartDutyAvailable: true,
+            smartDutyStatus: "AVAILABLE",
+            smartDutyLastSeen: nowIso,
+            smartDutyBackgroundedAt: nowIso,
+            smartDutyPresenceSource: "AppLayout",
+            smartDutyUpdatedAt: serverTimestamp(),
           }).catch(() => {});
           return;
         }
@@ -895,16 +914,30 @@ export default function AppLayout() {
         markUserOffline(user).catch(() => {});
       },
       onActive: () => {
+        const nowIso = new Date().toISOString();
         updateUserPresence(user, {
           currentPage: location.pathname,
           ...(user?.role === "duty_manager"
             ? {
                 smartDutyAvailable: true,
                 smartDutyStatus: "AVAILABLE",
-                smartDutyLastSeen: new Date().toISOString(),
+                smartDutyLastSeen: nowIso,
               }
             : {}),
         }).catch(() => {});
+
+        if (user?.role === "duty_manager") {
+          updateDoc(doc(db, "users", user.id), {
+            smartDutyAvailable: true,
+            smartDutyStatus: "AVAILABLE",
+            smartDutyLastSeen: nowIso,
+            smartDutyCurrentPage: location.pathname,
+            smartDutyPresenceSource: "AppLayout",
+            smartDutyUpdatedAt: serverTimestamp(),
+          })
+            .then(() => ensureDailySmartAssignments({ actor: user }))
+            .catch(() => {});
+        }
       },
     });
   }, [user, location.pathname]);
@@ -979,19 +1012,37 @@ export default function AppLayout() {
 
       lastActivityPingRef.current = now;
 
+      const nowIso = new Date(now).toISOString();
+
       updateUserPresence(user, {
         currentPage: location.pathname,
-        lastActivityAt: new Date(now).toISOString(),
+        lastActivityAt: nowIso,
         ...(user?.role === "duty_manager"
           ? {
               smartDutyAvailable: true,
               smartDutyStatus: "AVAILABLE",
-              smartDutyLastSeen: new Date(now).toISOString(),
+              smartDutyLastSeen: nowIso,
             }
           : {}),
       }).catch((err) =>
         console.error("Error updating activity heartbeat:", err)
       );
+
+      if (user?.role === "duty_manager") {
+        updateDoc(doc(db, "users", user.id), {
+          smartDutyAvailable: true,
+          smartDutyStatus: "AVAILABLE",
+          smartDutyLastSeen: nowIso,
+          lastActivityAt: nowIso,
+          smartDutyCurrentPage: location.pathname,
+          smartDutyPresenceSource: "AppLayout",
+          smartDutyUpdatedAt: serverTimestamp(),
+        })
+          .then(() => ensureDailySmartAssignments({ actor: user }))
+          .catch((err) =>
+            console.error("Error updating Smart Duty heartbeat:", err)
+          );
+      }
     };
 
     sendActivityPing();
