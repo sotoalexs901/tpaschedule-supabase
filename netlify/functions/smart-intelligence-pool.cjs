@@ -11,8 +11,8 @@ const safe = x => str(x).replace(/[^a-zA-Z0-9_-]/g,'_');
 const name = u => u.displayName || u.fullName || u.name || u.username || 'Duty Manager';
 function db() {
   if (!admin.apps.length) {
-    const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
-    if (!raw) throw new Error('FIREBASE_SERVICE_ACCOUNT_JSON missing');
+    const raw = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON;
+    if (!raw) throw new Error('GOOGLE_APPLICATION_CREDENTIALS_JSON missing');
     const cred = JSON.parse(raw);
     if (cred.private_key) cred.private_key = cred.private_key.replace(/\\n/g,'\n');
     admin.initializeApp({credential:admin.credential.cert(cred)});
