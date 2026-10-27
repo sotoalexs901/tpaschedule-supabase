@@ -357,6 +357,7 @@ export async function selectResponsibleSupervisor({ assignmentId: id, supervisor
     responsibleSupervisorSelectedById: clean(actor?.id),
     responsibleSupervisorSelectedByName: actor ? visibleName(actor) : "",
     responsibleSupervisorSelectedAt: serverTimestamp(),
+    dutyActionTakenAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   };
 
@@ -567,6 +568,76 @@ function approvedScheduleDutyIds({ rule, schedules, employees, users, now = new 
   return { ids: [...result], source: delta ? "approved_cabin_service_schedule" : "approved_eulen_management_dutys_managers", scheduleIds: matches.map((item) => item.id) };
 }
 
+
+// Local Tampa wall-clock key. Used for shift-end comparisons across midnight.
+function tampaWallKey(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(date);
+  const m = Object.fromEntries(parts.map((p) => [p.type, p.value]));
+  return `${m.year}-${m.month}-${m.day}T${m.hour}:${m.minute}`;
+}
+function nextDateKey(key) {
+  const d = new Date(`${key}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+function shiftEndForUser({ userId, rule, schedules, employees, users, now = new Date() }) {
+  const delta = isDeltaRule(rule);
+  const today = tampaDateKey(now);
+  const yesterday = tampaDateKey(new Date(now.getTime() - 86400000));
+  const { day, previousDay, minute } = tampaShiftContext(now);
+  const candidates = [];
+  for (const schedule of schedules) {
+    if (!matchesDutySchedule(schedule, delta)) continue;
+    const todayValid = scheduleCoversToday(schedule, now);
+    const yesterdayValid = scheduleCoversToday(schedule, new Date(now.getTime() - 86400000));
+    if (!todayValid && !yesterdayValid) continue;
+    for (const row of Array.isArray(schedule.grid) ? schedule.grid : []) {
+      if (userForDutyScheduleRow(row, employees, users)?.id !== userId) continue;
+      if (todayValid) for (const shift of Array.isArray(row[day]) ? row[day] : []) {
+        const start = shiftMinute(shift.start), end = shiftMinute(shift.end);
+        if (start === null || end === null || start === end) continue;
+        if (minute >= start && (end < start || minute < end)) {
+          const endDate = end < start ? nextDateKey(today) : today;
+          candidates.push(`${endDate}T${String(Math.floor(end / 60)).padStart(2, "0")}:${String(end % 60).padStart(2, "0")}`);
+        }
+      }
+      if (yesterdayValid) for (const shift of Array.isArray(row[previousDay]) ? row[previousDay] : []) {
+        const start = shiftMinute(shift.start), end = shiftMinute(shift.end);
+        if (start !== null && end !== null && end < start && minute < end) {
+          candidates.push(`${today}T${String(Math.floor(end / 60)).padStart(2, "0")}:${String(end % 60).padStart(2, "0")}`);
+        }
+      }
+    }
+  }
+  return candidates.sort()[0] || "";
+}
+async function alertUnattendedShiftEnd({ assignment, nowKey }) {
+  if (!assignment?.assignedDutyManagerId || !assignment?.assignedShiftEndLocal ||
+      assignment.assignedShiftEndLocal > nowKey || reviewIsComplete(assignment) ||
+      assignment.dutyActionTakenAt || assignment.reportReviews && Object.keys(assignment.reportReviews).length ||
+      assignment.responsibleSupervisorSelectedAt) return;
+  const alertId = `${assignment.id}__${assignment.assignedDutyManagerId}__${assignment.assignedShiftEndLocal.replace(/[^0-9]/g, "")}_no_action`;
+  await setDoc(doc(db, SMART_ALERTS_COLLECTION, alertId), {
+    active: true, dateKey: assignment.dateKey, assignmentId: assignment.id,
+    department: assignment.department || "", targetRole: "station_manager", audience: "STATION_MANAGER",
+    alertType: "DUTY_SHIFT_ENDED_NO_ACTION", severity: "HIGH",
+    title: `${assignment.department}: Duty Manager ended shift without action`,
+    message: `${assignment.assignedDutyManagerName || "Assigned Duty Manager"} ended the scheduled shift at ${assignment.assignedShiftEndLocal} (Tampa time) without a recorded review or follow-up.`,
+    assignedDutyManagerId: assignment.assignedDutyManagerId,
+    assignedDutyManagerName: assignment.assignedDutyManagerName || "",
+    shiftEndLocal: assignment.assignedShiftEndLocal,
+    source: "smart_shift_end_monitor_v1", updatedAt: serverTimestamp(), createdAt: serverTimestamp(),
+  }, { merge: true });
+  await setDoc(doc(db, SMART_AUDIT_COLLECTION, alertId), {
+    eventType: "DUTY_SHIFT_ENDED_NO_ACTION", dateKey: assignment.dateKey,
+    assignmentId: assignment.id, department: assignment.department || "",
+    assignedDutyManagerId: assignment.assignedDutyManagerId,
+    assignedDutyManagerName: assignment.assignedDutyManagerName || "",
+    shiftEndLocal: assignment.assignedShiftEndLocal,
+    createdAt: serverTimestamp(), source: "smart_shift_end_monitor_v1",
+  }, { merge: true });
+}
+
 export async function ensureDailySmartAssignments({ actor } = {}) {
   const dateKey = tampaDateKey();
   const [rulesSnap, usersSnap, employeesSnap, schedulesSnap, assignmentsSnap] = await Promise.all([
@@ -654,9 +725,11 @@ export async function ensureDailySmartAssignments({ actor } = {}) {
       supervisorResolvedAt: serverTimestamp(),
     };
 
+    if (existing) await alertUnattendedShiftEnd({ assignment: existing, nowKey: tampaWallKey() });
+
     // Migration safety: do not erase today's assignments before the Station Manager
     // has configured a weekly schedule for this department.
-    if (existing && !(rule.dutySchedule || []).length) {
+    if (existing && !(rule.dutySchedule || []).length && !schedules.some((item) => matchesDutySchedule(item, isDeltaRule(rule)))) {
       await setDoc(ref, { ...supervisorPatch, updatedAt: serverTimestamp() }, { merge: true });
       results.push({ id, ...existing, ...supervisorPatch, preserved: true, awaitingScheduleSetup: true });
       continue;
@@ -692,6 +765,7 @@ export async function ensureDailySmartAssignments({ actor } = {}) {
         : null;
 
     const selected = selectedDutyManager || fallbackStationManager;
+    const selectedShiftEndLocal = selectedDutyManager ? shiftEndForUser({ userId: selectedDutyManager.id, rule, schedules, employees, users: allUsers }) : "";
     const isStationManagerFallback = Boolean(fallbackStationManager && !selectedDutyManager);
     const previousAssigneeId = clean(existing?.assignedDutyManagerId);
     const previousAssigneeName = clean(existing?.assignedDutyManagerName);
@@ -710,6 +784,8 @@ export async function ensureDailySmartAssignments({ actor } = {}) {
       fallbackStationManagerName: rule.fallbackStationManagerName,
       ...supervisorPatch,
       assignedDutyManagerId: selected?.id || "",
+      assignedShiftEndLocal: selectedShiftEndLocal,
+      dutyActionTakenAt: selected?.id === existing?.assignedDutyManagerId ? (existing?.dutyActionTakenAt || null) : null,
       assignedDutyManagerName: selected ? visibleName(selected) : "",
       assignedDutyManagerDepartment: selected?.department || "",
       assignedReviewerRole: selected ? (isStationManagerFallback ? "station_manager" : "duty_manager") : "",
