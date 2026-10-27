@@ -60,6 +60,7 @@ function normalizeRule(id, data = {}) {
     fallbackStationManagerId: clean(data.fallbackStationManagerId),
     fallbackStationManagerName: clean(data.fallbackStationManagerName),
     notes: clean(data.notes),
+    dutySchedule: Array.isArray(data.dutySchedule) ? data.dutySchedule : [],
   };
 }
 
@@ -116,7 +117,7 @@ export default function SmartIntelligenceRulesPage() {
       return;
     }
     const current = rules.find((row) => row.id === selectedId);
-    setDraft(current ? { ...current, requiredReports: [...current.requiredReports], dedicatedDutyManagerIds: [...current.dedicatedDutyManagerIds] } : null);
+    setDraft(current ? { ...current, requiredReports: [...current.requiredReports], dedicatedDutyManagerIds: [...current.dedicatedDutyManagerIds], dutySchedule: [...current.dutySchedule] } : null);
   }, [selectedId, rules]);
 
   const configured = useMemo(() => new Set(rules.map((row) => row.department.toUpperCase())), [rules]);
@@ -139,6 +140,7 @@ export default function SmartIntelligenceRulesPage() {
         fallbackStationManagerId: "",
         fallbackStationManagerName: "",
         notes: "",
+        dutySchedule: [],
         createdAt: serverTimestamp(),
         createdById: user?.id || "",
         createdByName: visibleName(user),
@@ -172,6 +174,7 @@ export default function SmartIntelligenceRulesPage() {
         fallbackStationManagerId: draft.fallbackToStationManager ? (user?.id || "") : "",
         fallbackStationManagerName: draft.fallbackToStationManager ? visibleName(user) : "",
         notes: clean(draft.notes),
+        dutySchedule: (draft.dutySchedule || []).filter((slot) => slot.dutyManagerId && slot.start && slot.end).map((slot) => ({ day: slot.day, start: slot.start, end: slot.end, dutyManagerId: slot.dutyManagerId })),
         updatedAt: serverTimestamp(),
         updatedById: user?.id || "",
         updatedByName: visibleName(user),
@@ -197,6 +200,20 @@ export default function SmartIntelligenceRulesPage() {
       setMessage("Could not remove department rule.");
     }
   };
+
+  const addDutyShift = () => setDraft((current) => current ? {
+    ...current,
+    dutySchedule: [...(current.dutySchedule || []), { day: "mon", start: "07:00", end: "15:00", dutyManagerId: "" }],
+  } : current);
+
+  const editDutyShift = (index, patch) => setDraft((current) => current ? {
+    ...current,
+    dutySchedule: (current.dutySchedule || []).map((slot, i) => i === index ? { ...slot, ...patch } : slot),
+  } : current);
+
+  const removeDutyShift = (index) => setDraft((current) => current ? {
+    ...current, dutySchedule: (current.dutySchedule || []).filter((_, i) => i !== index),
+  } : current);
 
   const toggleReport = (key) => {
     setDraft((current) => {
@@ -283,6 +300,26 @@ export default function SmartIntelligenceRulesPage() {
                 </div>
               </div>
 
+              <div style={{ border: "1px solid #bfdbfe", background: "#f8fbff", borderRadius: 12, padding: 14 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+                  <div><strong>Duty Manager weekly schedule · Tampa time</strong><div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>Assign reviewers by scheduled shift, even when offline. Overnight shifts are supported. Add multiple shifts to share coverage.</div></div>
+                  <button type="button" onClick={addDutyShift} style={{ padding: "8px 12px", borderRadius: 9, background: "#0f4c81", color: "#fff", border: 0, cursor: "pointer" }}>+ Add shift</button>
+                </div>
+                <div style={{ display: "grid", gap: 9, marginTop: 12 }}>
+                  {(draft.dutySchedule || []).map((slot, index) => (
+                    <div key={index} style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                      <select aria-label="Day" value={slot.day} onChange={(e) => editDutyShift(index, { day: e.target.value })} style={{ padding: 9, borderRadius: 8, border: "1px solid #cbd5e1" }}>{[["sun","Sunday"],["mon","Monday"],["tue","Tuesday"],["wed","Wednesday"],["thu","Thursday"],["fri","Friday"],["sat","Saturday"]].map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select>
+                      <input aria-label="Start" type="time" value={slot.start} onChange={(e) => editDutyShift(index, { start: e.target.value })} style={{ padding: 8, borderRadius: 8, border: "1px solid #cbd5e1" }}/>
+                      <span>to</span>
+                      <input aria-label="End" type="time" value={slot.end} onChange={(e) => editDutyShift(index, { end: e.target.value })} style={{ padding: 8, borderRadius: 8, border: "1px solid #cbd5e1" }}/>
+                      <select aria-label="Duty Manager" value={slot.dutyManagerId} onChange={(e) => editDutyShift(index, { dutyManagerId: e.target.value })} style={{ padding: 9, borderRadius: 8, border: "1px solid #cbd5e1", flex: "1 1 170px" }}><option value="">Select Duty Manager</option>{dutyManagers.map((dm) => <option key={dm.id} value={dm.id}>{visibleName(dm)}</option>)}</select>
+                      <button type="button" onClick={() => removeDutyShift(index)} style={{ border: "1px solid #fecaca", color: "#b91c1c", background: "#fff", borderRadius: 8, padding: "8px 10px" }}>Remove</button>
+                    </div>
+                  ))}
+                  {!(draft.dutySchedule || []).length && <div style={{ color: "#64748b", fontSize: 12 }}>No schedule yet. Configure shifts to enable schedule-based assignments.</div>}
+                </div>
+              </div>
+
               <div style={{ border: "1px solid #dbeafe", background: draft.fallbackToStationManager ? "#eff6ff" : "#f8fafc", borderRadius: 12, padding: 12 }}>
                 <label style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer" }}>
                   <input
@@ -299,7 +336,7 @@ export default function SmartIntelligenceRulesPage() {
                     style={{ marginTop: 3 }}
                   />
                   <span>
-                    <strong>Assign to me if no eligible Duty Manager is active</strong><br/>
+                    <strong>Assign to me if no Duty Manager is scheduled</strong><br/>
                     <span style={{ fontSize: 11.5, color: "#64748b" }}>
                       Smart Intelligence will assign this department to {visibleName(user)} as Station Manager fallback instead of leaving it WAITING.
                     </span>
