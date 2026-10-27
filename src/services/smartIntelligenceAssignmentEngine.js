@@ -300,6 +300,7 @@ function normalizeRule(id, data = {}) {
     fallbackStationManagerId: clean(data.fallbackStationManagerId),
     fallbackStationManagerName: clean(data.fallbackStationManagerName),
     notes: clean(data.notes),
+    dutySchedule: Array.isArray(data.dutySchedule) ? data.dutySchedule : [],
   };
 }
 
@@ -472,6 +473,30 @@ async function appendReassignmentAudit({ dateKey, rule, previous, next, actor })
   );
 }
 
+// Evaluate weekly shift coverage in Tampa local time. Overnight rows remain active after midnight.
+function tampaShiftContext(now = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(now);
+  const get = (type) => parts.find((p) => p.type === type)?.value || "";
+  const day = get("weekday").toLowerCase().slice(0, 3);
+  const minute = (Number(get("hour")) % 24) * 60 + Number(get("minute"));
+  return { day, previousDay: DAY_KEYS[(DAY_KEYS.indexOf(day) + 6) % 7], minute };
+}
+function shiftMinute(time) {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(clean(time));
+  if (!match) return null;
+  const h = Number(match[1]), m = Number(match[2]);
+  return h <= 23 && m <= 59 ? h * 60 + m : null;
+}
+function scheduledDutyIds(rule, now = new Date()) {
+  const { day, previousDay, minute } = tampaShiftContext(now);
+  return [...new Set((rule.dutySchedule || []).filter((slot) => {
+    const start = shiftMinute(slot.start), end = shiftMinute(slot.end);
+    if (start === null || end === null || start === end || !slot.dutyManagerId) return false;
+    if (end > start) return slot.day === day && minute >= start && minute < end;
+    return (slot.day === day && minute >= start) || (slot.day === previousDay && minute < end);
+  }).map((slot) => clean(slot.dutyManagerId)))];
+}
+
 export async function ensureDailySmartAssignments({ actor } = {}) {
   const dateKey = tampaDateKey();
   const [rulesSnap, usersSnap, employeesSnap, schedulesSnap, assignmentsSnap] = await Promise.all([
@@ -507,11 +532,11 @@ export async function ensureDailySmartAssignments({ actor } = {}) {
       rule.reviewMode === "DEDICATED" ? rule.dedicatedDutyManagerIds : []
     )
   );
-  const generalPool = activeDutyManagers.filter((user) => !dedicatedIds.has(user.id));
+  const generalPool = allDutyManagers.filter((user) => !dedicatedIds.has(user.id));
 
   // Count only locked/completed packages first. Open auto-assigned packages are
   // recalculated deterministically so the active workload stays balanced.
-  const loadByUserId = new Map(activeDutyManagers.map((user) => [user.id, 0]));
+  const loadByUserId = new Map(allDutyManagers.map((user) => [user.id, 0]));
   for (const rule of rules) {
     const existing = existingById.get(assignmentId(dateKey, rule));
     if (!existing || !clean(existing.assignedDutyManagerId) || !reviewIsComplete(existing)) continue;
@@ -559,6 +584,14 @@ export async function ensureDailySmartAssignments({ actor } = {}) {
       supervisorResolvedAt: serverTimestamp(),
     };
 
+    // Migration safety: do not erase today's assignments before the Station Manager
+    // has configured a weekly schedule for this department.
+    if (existing && !(rule.dutySchedule || []).length) {
+      await setDoc(ref, { ...supervisorPatch, updatedAt: serverTimestamp() }, { merge: true });
+      results.push({ id, ...existing, ...supervisorPatch, preserved: true, awaitingScheduleSetup: true });
+      continue;
+    }
+
     // Closed/review-complete packages are audit-locked and never rebalanced.
     if (existing && clean(existing.assignedDutyManagerId) && reviewIsComplete(existing)) {
       await setDoc(ref, { ...supervisorPatch, updatedAt: serverTimestamp() }, { merge: true });
@@ -566,9 +599,12 @@ export async function ensureDailySmartAssignments({ actor } = {}) {
       continue;
     }
 
-    const pool = rule.reviewMode === "DEDICATED"
-      ? activeDutyManagers.filter((user) => rule.dedicatedDutyManagerIds.includes(user.id))
-      : generalPool;
+    // Schedule is authoritative: no login, heartbeat or online requirement.
+    const scheduledIds = scheduledDutyIds(rule);
+    const pool = allDutyManagers.filter((candidate) =>
+      scheduledIds.includes(candidate.id) &&
+      (rule.reviewMode !== "DEDICATED" || rule.dedicatedDutyManagerIds.includes(candidate.id))
+    );
 
     const selectedDutyManager = chooseLeastLoaded(pool, loadByUserId);
     const fallbackStationManager =
@@ -584,7 +620,7 @@ export async function ensureDailySmartAssignments({ actor } = {}) {
     const isStationManagerFallback = Boolean(fallbackStationManager && !selectedDutyManager);
     const previousAssigneeId = clean(existing?.assignedDutyManagerId);
     const previousAssigneeName = clean(existing?.assignedDutyManagerName);
-    const assigneeChanged = Boolean(selected?.id) && previousAssigneeId !== clean(selected.id);
+    const assigneeChanged = previousAssigneeId !== clean(selected?.id);
 
     const payload = {
       dateKey,
@@ -606,8 +642,9 @@ export async function ensureDailySmartAssignments({ actor } = {}) {
       status: selected ? "ASSIGNED" : "WAITING_FOR_DUTY_MANAGER",
       assignmentSource: isStationManagerFallback
         ? "station_manager_fallback"
-        : "smart_assignment_engine_balanced_v3",
-      balancingStrategy: "least_loaded_active_pool",
+        : "smart_assignment_engine_scheduled_v4",
+      balancingStrategy: "least_loaded_scheduled_pool",
+      scheduledDutyManagerIds: scheduledIds,
       rebalancedAt: assigneeChanged && previousAssigneeId ? serverTimestamp() : (existing?.rebalancedAt || null),
       updatedAt: serverTimestamp(),
       ...(existing
@@ -643,6 +680,9 @@ export async function ensureDailySmartAssignments({ actor } = {}) {
       });
     }
 
+    if (assigneeChanged && !selected?.id && previousAssigneeId) {
+      await setDoc(doc(db, SMART_ALERTS_COLLECTION, `${dateKey}__${slug(rule.id || rule.department)}__assignment_notice__${previousAssigneeId}`), { active: false, updatedAt: serverTimestamp() }, { merge: true });
+    }
     results.push({ id, ...payload, preserved: !assigneeChanged && Boolean(existing) });
   }
 
@@ -650,6 +690,7 @@ export async function ensureDailySmartAssignments({ actor } = {}) {
     dateKey,
     rulesCount: rules.length,
     activeDutyManagers,
+    scheduledDutyManagers: allDutyManagers.filter((dm) => results.some((row) => row.scheduledDutyManagerIds?.includes(dm.id))),
     generalPool,
     dedicatedIds: [...dedicatedIds],
     loadByUserId: Object.fromEntries(loadByUserId.entries()),
