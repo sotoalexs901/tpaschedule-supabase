@@ -2,6 +2,7 @@ import {
   addDoc,
   collection,
   doc,
+  getDoc,
   getDocs,
   serverTimestamp,
   setDoc,
@@ -482,8 +483,8 @@ async function upsertDutyAlert({ assignment, alert }) {
   );
 }
 
-export async function refreshSmartReportPackages({ actor } = {}) {
-  const dateKey = tampaDateKey();
+export async function refreshSmartReportPackages({ actor, dateKey = tampaDateKey() } = {}) {
+  if (dateKey !== tampaDateKey()) throw new Error("Historical report packages are read-only. Refresh is only available for today.");
   const assignmentsSnap = await getDocs(collection(db, SMART_ASSIGNMENTS_COLLECTION));
   const assignments = assignmentsSnap.docs
     .map((item) => ({ id: item.id, ...item.data() }))
@@ -583,6 +584,12 @@ export async function completeSmartReportPackage({ assignment, actor } = {}) {
   }
 
   const summary = assignment.reportPackageSummary || {};
+  const reportReviews = assignment.reportReviews || {};
+  const unreviewed = (assignment.reportPackage || []).filter((row) =>
+    row.connected && row.count > 0 && row.status !== "NOT_DUE" &&
+    reportReviews[row.key]?.reportId !== row.bestReportId
+  );
+  if (unreviewed.length) throw new Error(`Review each received report before closing: ${unreviewed.map((row) => row.label).join(", ")}.`);
   if (Number(summary.missingCount || 0) > 0 || Number(summary.followUpCount || 0) > 0) {
     throw new Error("Resolve missing or follow-up items before closing the package.");
   }
@@ -639,6 +646,28 @@ export async function completeSmartReportPackage({ assignment, actor } = {}) {
     actorName: reviewerName,
     actorRole: actor.role || "",
     source: SMART_REPORT_MONITOR_VERSION,
+    createdAt: serverTimestamp(),
+  });
+}
+
+export async function markSmartReportReviewed({ assignment, report, actor } = {}) {
+  if (!assignment?.id || !report?.key || !report?.bestReportId || !actor?.id) throw new Error("Report and session required.");
+  const allowed = actor.role === "station_manager" || (actor.role === "duty_manager" && assignment.assignedDutyManagerId === actor.id);
+  if (!allowed) throw new Error("Only the assigned Duty Manager or Station Manager may review this report.");
+  if (assignment.dateKey !== tampaDateKey()) throw new Error("Historical reviews are read-only.");
+  const liveSnap = await getDoc(doc(db, SMART_ASSIGNMENTS_COLLECTION, assignment.id));
+  if (!liveSnap.exists()) throw new Error("Assignment not found.");
+  const live = liveSnap.data();
+  if (live.packageReviewStatus === "COMPLETED") throw new Error("This package is already closed.");
+  const current = (live.reportPackage || []).find((row) => row.key === report.key);
+  if (!current || current.bestReportId !== report.bestReportId) throw new Error("Report has changed. Refresh before reviewing.");
+  const reviewerName = actor.displayName || actor.fullName || actor.name || actor.username || "Management";
+  const review = { reportId: report.bestReportId, sourceCollection: report.sourceCollection || "", reviewedById: actor.id, reviewedByName: reviewerName, reviewedAt: new Date().toISOString() };
+  await updateDoc(doc(db, SMART_ASSIGNMENTS_COLLECTION, assignment.id), { [`reportReviews.${report.key}`]: review, updatedAt: serverTimestamp() });
+  await addDoc(collection(db, SMART_AUDIT_COLLECTION), {
+    eventType: "INDIVIDUAL_REPORT_REVIEWED", dateKey: assignment.dateKey, assignmentId: assignment.id,
+    department: assignment.department || "", reportKey: report.key, reportId: report.bestReportId,
+    sourceCollection: report.sourceCollection || "", actorId: actor.id, actorName: reviewerName,
     createdAt: serverTimestamp(),
   });
 }
