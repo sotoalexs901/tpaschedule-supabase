@@ -1118,6 +1118,33 @@ function emptyEditRow() {
   };
 }
 
+
+function escapePrintText(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  }[c]));
+}
+function employeeKey(value) {
+  return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+function buildEmployeePrintHtml(name, start, end, entries) {
+  const total = entries.reduce((n, e) => n + e.hours, 0);
+  const days = new Set(entries.map((e) => e.date)).size;
+  const departments = [...new Set(entries.map((e) => e.department))].sort();
+  const rows = entries.map((e) => `<tr><td>${escapePrintText(e.date)}</td><td>${escapePrintText(e.department)}</td><td>${escapePrintText(e.punchIn)}</td><td>${escapePrintText(e.punchOut)}</td><td>${escapePrintText(e.breakTaken)}</td><td class="num">${e.hours.toFixed(2)}</td><td>${escapePrintText(e.supervisor)}</td></tr>`).join("");
+  const dayTotals = [...new Set(entries.map((e) => e.date))].sort().map(date => {
+    const daily = entries.filter(e => e.date === date);
+    return `<tr class="subtotal"><td>${escapePrintText(date)}</td><td colspan="4">Daily total (${new Set(daily.map(e => e.department)).size} department(s))</td><td class="num">${daily.reduce((n,e) => n+e.hours,0).toFixed(2)}</td><td></td></tr>`;
+  }).join("");
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Employee Timesheet - ${escapePrintText(name)}</title><style>
+    body{font-family:Arial,sans-serif;color:#17263b;margin:28px}header{border-bottom:3px solid #175b9b;padding-bottom:12px}h1{margin:0;color:#164c7b;font-size:23px}p{margin:6px 0}.cards{display:flex;gap:12px;margin:20px 0}.card{border:1px solid #d6e1ed;border-radius:8px;padding:12px;flex:1}.card b{display:block;font-size:19px;margin-top:5px}table{width:100%;border-collapse:collapse;font-size:11px;margin-top:16px}th{background:#174c7b;color:white;text-align:left;padding:9px}td{padding:8px;border-bottom:1px solid #dde5ee}.num{text-align:right;font-weight:bold}.subtotal{background:#eaf2f9;font-weight:bold}h2{font-size:15px;margin-top:24px}.foot{margin-top:20px;font-size:10px;color:#64748b}@media print{body{margin:10mm}thead{display:table-header-group}tr{break-inside:avoid}.cards{break-inside:avoid}}</style></head><body>
+    <header><h1>Employee Timesheet Report</h1><p><strong>${escapePrintText(name)}</strong> | ${escapePrintText(start)} to ${escapePrintText(end)}</p></header>
+    <div class="cards"><div class="card">Total hours<b>${total.toFixed(2)} h</b></div><div class="card">Days worked<b>${days}</b></div><div class="card">Departments<b>${departments.length}</b></div><div class="card">Entries<b>${entries.length}</b></div></div>
+    <p><strong>Departments worked:</strong> ${escapePrintText(departments.join(", ") || "None")}</p>
+    <h2>Daily work details</h2><table><thead><tr><th>Date</th><th>Department</th><th>In</th><th>Out</th><th>Break</th><th>Hours</th><th>Submitted by / Supervisor</th></tr></thead><tbody>${rows || '<tr><td colspan="7">No records in selected range</td></tr>'}</tbody></table>
+    <h2>Daily totals</h2><table><thead><tr><th>Date</th><th colspan="4">Summary</th><th>Hours</th><th></th></tr></thead><tbody>${dayTotals}</tbody></table><p class="foot">Hours calculated from punch-in, punch-out and break on each submitted timesheet row. Overnight shifts follow the original report date. Review entries for overlaps before payroll use.</p></body></html>`;
+}
+
 export default function TimesheetAdminPage() {
   const { user } = useUser();
   const { isMobile, isTablet } = useViewport();
@@ -1160,6 +1187,10 @@ export default function TimesheetAdminPage() {
     submittedBy: "",
   });
 
+  const [reportMode, setReportMode] = useState("department");
+  const [employeeFilter, setEmployeeFilter] = useState("");
+  const [employeeStart, setEmployeeStart] = useState("2026-10-01");
+  const [employeeEnd, setEmployeeEnd] = useState("2026-10-25");
   const [returnReason, setReturnReason] = useState("");
 
   const [editData, setEditData] = useState({
@@ -1377,6 +1408,51 @@ export default function TimesheetAdminPage() {
       return true;
     });
   }, [accessibleReports, filters]);
+
+  const employeeOptions = useMemo(() => {
+    const names = new Map();
+    accessibleReports.forEach(report => (report.rows || []).forEach(row => {
+      const name = String(row.employeeName || "").trim();
+      if (name && !names.has(employeeKey(name))) names.set(employeeKey(name), name);
+    }));
+    return [...names.values()].sort((a,b) => a.localeCompare(b));
+  }, [accessibleReports]);
+
+  const employeeEntries = useMemo(() => {
+    if (!employeeFilter) return [];
+    const entries = [];
+    accessibleReports.forEach(report => {
+      const date = String(report.reportDate || "").slice(0, 10);
+      if (!date || (employeeStart && date < employeeStart) || (employeeEnd && date > employeeEnd)) return;
+      (report.rows || []).forEach((row, index) => {
+        if (employeeKey(row.employeeName) !== employeeKey(employeeFilter)) return;
+        entries.push({ id: `${report.id}-${index}`, date,
+          department: prettifyDepartment(report.department || report.normalizedDepartment || report.airline),
+          supervisor: report.supervisorReporting || report.submittedByName || report.submittedByUsername || "Not recorded",
+          punchIn: row.punchIn || "—", punchOut: row.punchOut || "—",
+          breakTaken: row.breakTaken || "No", hours: calculateRowHours(row) });
+      });
+    });
+    return entries.sort((a,b) => a.date.localeCompare(b.date) || a.department.localeCompare(b.department));
+  }, [accessibleReports, employeeFilter, employeeStart, employeeEnd]);
+
+  const employeeTotalHours = useMemo(() => employeeEntries.reduce((sum, e) => sum + e.hours, 0), [employeeEntries]);
+  const employeeDepartments = useMemo(() => [...new Set(employeeEntries.map(e => e.department))].sort(), [employeeEntries]);
+  const employeeDaily = useMemo(() => {
+    const days = new Map();
+    employeeEntries.forEach(e => {
+      if (!days.has(e.date)) days.set(e.date, { date:e.date, hours:0, departments:new Set() });
+      const day = days.get(e.date); day.hours += e.hours; day.departments.add(e.department);
+    });
+    return [...days.values()].sort((a,b) => a.date.localeCompare(b.date));
+  }, [employeeEntries]);
+  const handleEmployeePrint = () => {
+    if (!employeeFilter || !employeeEntries.length) return;
+    const w = window.open("", "_blank", "width=1200,height=900");
+    if (!w) { setStatusMessage("Please allow pop-ups to print the employee report."); return; }
+    w.document.open(); w.document.write(buildEmployeePrintHtml(employeeFilter, employeeStart, employeeEnd, employeeEntries)); w.document.close();
+    setTimeout(() => { w.focus(); w.print(); }, 400);
+  };
 
   const airlineOptions = useMemo(() => {
     const set = new Set();
@@ -2295,6 +2371,35 @@ export default function TimesheetAdminPage() {
           </div>
         </div>
       )}
+
+      <PageCard style={{ padding: isMobile ? 16 : 22 }}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",marginBottom:16}}>
+          <div><h2 style={{margin:0,fontSize:19,color:"#123d67"}}>Timesheet Report Center</h2><p style={{margin:"5px 0 0",color:"#64748b",fontSize:13}}>Choose department review or individual employee history.</p></div>
+          <div style={{display:"flex",gap:7,background:"#eef4fa",padding:5,borderRadius:12}}>
+            <button type="button" onClick={() => setReportMode("department")} style={{border:0,borderRadius:9,padding:"10px 14px",cursor:"pointer",fontWeight:700,background:reportMode==="department"?"#155b93":"transparent",color:reportMode==="department"?"white":"#31546f"}}>By Department</button>
+            <button type="button" onClick={() => setReportMode("employee")} style={{border:0,borderRadius:9,padding:"10px 14px",cursor:"pointer",fontWeight:700,background:reportMode==="employee"?"#155b93":"transparent",color:reportMode==="employee"?"white":"#31546f"}}>By Employee</button>
+          </div>
+        </div>
+        {reportMode === "employee" && <>
+          <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"minmax(200px,2fr) repeat(2,minmax(130px,1fr)) auto",gap:12,alignItems:"end"}}>
+            <label style={{display:"grid",gap:5,fontSize:12,fontWeight:700}}>Employee<select value={employeeFilter} onChange={e => setEmployeeFilter(e.target.value)} style={{padding:11,border:"1px solid #cbd5e1",borderRadius:9,minWidth:0}}><option value="">Select employee</option>{employeeOptions.map(name => <option key={name} value={name}>{name}</option>)}</select></label>
+            <label style={{display:"grid",gap:5,fontSize:12,fontWeight:700}}>From<input type="date" value={employeeStart} onChange={e => setEmployeeStart(e.target.value)} style={{padding:10,border:"1px solid #cbd5e1",borderRadius:9,minWidth:0}} /></label>
+            <label style={{display:"grid",gap:5,fontSize:12,fontWeight:700}}>To<input type="date" value={employeeEnd} onChange={e => setEmployeeEnd(e.target.value)} style={{padding:10,border:"1px solid #cbd5e1",borderRadius:9,minWidth:0}} /></label>
+            <button type="button" disabled={!employeeFilter || !employeeEntries.length || employeeStart > employeeEnd} onClick={handleEmployeePrint} style={{border:0,borderRadius:9,padding:"12px 18px",background:"#155b93",color:"white",fontWeight:800,cursor:"pointer",opacity:!employeeEntries.length?.55:1}}>Print Report</button>
+          </div>
+          {employeeStart > employeeEnd && <p style={{color:"#b91c1c"}}>Start date must be before end date.</p>}
+          {employeeFilter && <>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:10,marginTop:18}}>
+              {[{label:"Total hours",value:`${employeeTotalHours.toFixed(2)} h`},{label:"Days worked",value:employeeDaily.length},{label:"Departments",value:employeeDepartments.length},{label:"Timesheet entries",value:employeeEntries.length}].map(item => <div key={item.label} style={{background:"#f1f6fb",padding:14,borderRadius:11,border:"1px solid #dbe7f3"}}><div style={{fontSize:12,color:"#64748b"}}>{item.label}</div><div style={{fontSize:22,fontWeight:800,color:"#123d67"}}>{item.value}</div></div>)}
+            </div>
+            <p style={{fontSize:13,color:"#334155",margin:"14px 0"}}><strong>Departments worked:</strong> {employeeDepartments.join(", ") || "No records"}</p>
+            <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:680}}><thead><tr>{["Date","Department","Punch In","Punch Out","Break","Hours","Submitted by / Supervisor"].map(h => <th key={h} style={{textAlign:"left",background:"#e8f0f8",padding:10,borderBottom:"1px solid #cbd5e1"}}>{h}</th>)}</tr></thead><tbody>{employeeEntries.map(e => <tr key={e.id}>{[e.date,e.department,e.punchIn,e.punchOut,e.breakTaken,e.hours.toFixed(2),e.supervisor].map((v,i) => <td key={i} style={{padding:10,borderBottom:"1px solid #e2e8f0"}}>{v}</td>)}</tr>)}</tbody></table></div>
+            <h3 style={{fontSize:15,margin:"20px 0 8px"}}>Hours by day</h3>
+            <div style={{display:"grid",gap:7}}>{employeeDaily.map(day => <div key={day.date} style={{display:"flex",justifyContent:"space-between",gap:10,background:"#f8fafc",padding:11,borderRadius:9,fontSize:13}}><span><strong>{day.date}</strong> · {[...day.departments].join(" + ")}</span><strong>{day.hours.toFixed(2)} h</strong></div>)}</div>
+            {!employeeEntries.length && <p>No timesheets found for this employee and date range.</p>}
+          </>}
+        </>}
+      </PageCard>
 
       {/* All report content below preserves the existing operational logic. */}
       <PageCard style={{ padding: isMobile ? 16 : 20 }}>
