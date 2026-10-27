@@ -1,12 +1,12 @@
 // Netlify Scheduled Function: server-side, independent of browser sessions.
-// Requires firebase-admin and FIREBASE_SERVICE_ACCOUNT_JSON environment variable.
+// Requires firebase-admin and GOOGLE_APPLICATION_CREDENTIALS_JSON environment variable.
 const { schedule } = require('@netlify/functions');
 const admin = require('firebase-admin');
 
 function firebase() {
   if (!admin.apps.length) {
-    const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
-    if (!raw) throw new Error('FIREBASE_SERVICE_ACCOUNT_JSON is missing');
+    const raw = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON;
+    if (!raw) throw new Error('GOOGLE_APPLICATION_CREDENTIALS_JSON is missing');
     const account = JSON.parse(raw);
     if (account.private_key) account.private_key = account.private_key.replace(/\\n/g, '\n');
     admin.initializeApp({ credential: admin.credential.cert(account) });
