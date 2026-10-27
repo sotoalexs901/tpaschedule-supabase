@@ -513,6 +513,60 @@ function scheduledDutyIds(rule, now = new Date()) {
   }).map((slot) => clean(slot.dutyManagerId)))];
 }
 
+// Approved AeroStation schedules are the primary source of Duty coverage.
+// General operations: Eulen Management Dutys Managers.
+// Delta: Cabin Service. A name-only match is intentionally avoided unless unique.
+function scheduleTitle(schedule) {
+  return [schedule.name, schedule.title, schedule.scheduleName, schedule.department,
+    schedule.airline, schedule.airlineDisplayName, schedule.account]
+    .map((value) => upper(value).replace(/[^A-Z0-9]+/g, " ").trim());
+}
+function isDeltaRule(rule) {
+  return normalizeAccount(rule.department) === "DL CABIN SERVICE";
+}
+function matchesDutySchedule(schedule, delta) {
+  if (upper(schedule.status || "APPROVED") !== "APPROVED") return false;
+  const labels = scheduleTitle(schedule);
+  return delta
+    ? labels.some((value) => value === "CABIN SERVICE" || value === "DL CABIN SERVICE" || value === "DELTA CABIN SERVICE")
+    : labels.some((value) => value === "EULEN MANAGEMENT DUTYS MANAGERS" || value === "EULEN MANAGEMENT DUTY MANAGERS");
+}
+function userForDutyScheduleRow(row, employees, users) {
+  const employee = employees.find((item) => clean(item.id) === clean(row.employeeId));
+  const explicitId = clean(row.userId || row.linkedUserId || employee?.linkedUserId);
+  let user = users.find((item) => item.id === explicitId && upper(item.role) === "DUTY_MANAGER");
+  if (!user && employee) user = findUserForEmployee(employee, users);
+  if (!user || upper(user.role) !== "DUTY_MANAGER") return null;
+  return user;
+}
+function approvedScheduleDutyIds({ rule, schedules, employees, users, now = new Date() }) {
+  const delta = isDeltaRule(rule);
+  const { day, previousDay, minute } = tampaShiftContext(now);
+  const result = new Set();
+  const matches = schedules.filter((schedule) => matchesDutySchedule(schedule, delta) && scheduleCoversToday(schedule, now));
+  // Include previous-day schedules for shifts crossing midnight.
+  const yesterday = new Date(now.getTime() - 86400000);
+  const previousSchedules = schedules.filter((schedule) => matchesDutySchedule(schedule, delta) && scheduleCoversToday(schedule, yesterday));
+  for (const schedule of [...new Map([...matches, ...previousSchedules].map((item) => [item.id, item])).values()]) {
+    for (const row of Array.isArray(schedule.grid) ? schedule.grid : []) {
+      const user = userForDutyScheduleRow(row, employees, users);
+      if (!user) continue;
+      const todayShifts = Array.isArray(row[day]) ? row[day] : [];
+      const previousShifts = Array.isArray(row[previousDay]) ? row[previousDay] : [];
+      const covers = todayShifts.some((shift) => {
+        const start = shiftMinute(shift.start), end = shiftMinute(shift.end);
+        if (start === null || end === null || start === end) return false;
+        return end > start ? minute >= start && minute < end : minute >= start;
+      }) || previousShifts.some((shift) => {
+        const start = shiftMinute(shift.start), end = shiftMinute(shift.end);
+        return start !== null && end !== null && end < start && minute < end;
+      });
+      if (covers) result.add(user.id);
+    }
+  }
+  return { ids: [...result], source: delta ? "approved_cabin_service_schedule" : "approved_eulen_management_dutys_managers", scheduleIds: matches.map((item) => item.id) };
+}
+
 export async function ensureDailySmartAssignments({ actor } = {}) {
   const dateKey = tampaDateKey();
   const [rulesSnap, usersSnap, employeesSnap, schedulesSnap, assignmentsSnap] = await Promise.all([
@@ -616,7 +670,12 @@ export async function ensureDailySmartAssignments({ actor } = {}) {
     }
 
     // Schedule is authoritative: no login, heartbeat or online requirement.
-    const scheduledIds = scheduledDutyIds(rule);
+    const approvedCoverage = approvedScheduleDutyIds({ rule, schedules, employees, users: allUsers });
+    // Approved schedules take priority; legacy Rules slots remain a fallback only
+    // when no matching approved schedule exists for this account.
+    const scheduledIds = approvedCoverage.scheduleIds.length
+      ? approvedCoverage.ids
+      : scheduledDutyIds(rule);
     const pool = allDutyManagers.filter((candidate) =>
       scheduledIds.includes(candidate.id) &&
       (rule.reviewMode !== "DEDICATED" || rule.dedicatedDutyManagerIds.includes(candidate.id))
@@ -661,6 +720,8 @@ export async function ensureDailySmartAssignments({ actor } = {}) {
         : "smart_assignment_engine_scheduled_v4",
       balancingStrategy: "least_loaded_scheduled_pool",
       scheduledDutyManagerIds: scheduledIds,
+      dutyScheduleSource: approvedCoverage.scheduleIds.length ? approvedCoverage.source : "rules_weekly_schedule",
+      dutyApprovedScheduleIds: approvedCoverage.scheduleIds,
       rebalancedAt: assigneeChanged && previousAssigneeId ? serverTimestamp() : (existing?.rebalancedAt || null),
       updatedAt: serverTimestamp(),
       ...(existing
