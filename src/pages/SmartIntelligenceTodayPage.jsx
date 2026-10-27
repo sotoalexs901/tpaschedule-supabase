@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { collection, onSnapshot } from "firebase/firestore";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 import {
@@ -7,6 +8,7 @@ import {
   selectResponsibleSupervisor,
   SMART_ASSIGNMENTS_COLLECTION,
   tampaDateKey,
+  SMART_AUDIT_COLLECTION,
 } from "../services/smartIntelligenceAssignmentEngine.js";
 import {
   SMART_ALERTS_COLLECTION,
@@ -14,6 +16,7 @@ import {
   acknowledgeSmartAlert,
   completeSmartReportPackage,
   refreshSmartReportPackages,
+  markSmartReportReviewed,
 } from "../services/smartIntelligenceReportMonitor.js";
 
 function clean(value) {
@@ -45,9 +48,31 @@ function packageStyle(status) {
   return { bg: "#f1f5f9", color: "#475569", label: "Waiting" };
 }
 
+const REPORT_MANAGEMENT_ROUTES = {
+  gate_checklist: "/gate-checklist-management",
+  operational_report: "/operational-report/reports",
+  supervisor_daily_report: "/operational-report/reports",
+  timesheet: "/timesheets/reports",
+  operations_request: "/operations-requests/reports",
+  cleaning_security: "/cleaning-security/reports",
+  regulated_garbage: "/regulated-garbage/reports",
+  wchr_flight_report: "/wchr/admin/flights",
+  wchr_poi: "/wchr-poi/reports",
+  employee_performance: "/employee-performance-management",
+  bso_daily: "/bso-daily-management",
+  fuel_entry: "/fuel-management",
+  cierre_vuelo: "/cierre-vuelo-management",
+};
+
 export default function SmartIntelligenceTodayPage() {
   const { user } = useUser();
-  const dateKey = useMemo(() => tampaDateKey(), []);
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const todayKey = useMemo(() => tampaDateKey(), []);
+  const [dateKey, setDateKey] = useState(() => searchParams.get("date") || todayKey);
+  const changeDate = (next) => { setDateKey(next); setSearchParams(next === todayKey ? {} : { date: next }); };
+  const isToday = dateKey === todayKey;
+  const isStationManager = user?.role === "station_manager";
   const [rows, setRows] = useState([]);
   const [alerts, setAlerts] = useState([]);
   const [running, setRunning] = useState(false);
@@ -56,8 +81,12 @@ export default function SmartIntelligenceTodayPage() {
   const [selectingSupervisorFor, setSelectingSupervisorFor] = useState("");
   const [closingPackageId, setClosingPackageId] = useState("");
   const [dutyUsers, setDutyUsers] = useState([]);
+  const [auditRows, setAuditRows] = useState([]);
+  const [dutyFilter, setDutyFilter] = useState("");
+  const [reviewingId, setReviewingId] = useState("");
 
   const runEngine = async () => {
+    if (!isToday) return;
     try {
       setRunning(true);
       setMessage("");
@@ -74,7 +103,7 @@ export default function SmartIntelligenceTodayPage() {
   };
 
   useEffect(() => {
-    runEngine();
+    if (user?.id) runEngine();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
@@ -109,6 +138,7 @@ export default function SmartIntelligenceTodayPage() {
 
 
   useEffect(() => {
+    if (!isStationManager) return undefined;
     const unsub = onSnapshot(collection(db, "users"), (snap) => {
       const next = snap.docs
         .map((item) => ({ id: item.id, ...item.data() }))
@@ -117,7 +147,7 @@ export default function SmartIntelligenceTodayPage() {
       setDutyUsers(next);
     });
     return () => unsub();
-  }, []);
+  }, [isStationManager]);
 
   const dutyDiagnostics = useMemo(() => {
     const now = Date.now();
@@ -176,6 +206,41 @@ export default function SmartIntelligenceTodayPage() {
     });
   }, [dutyUsers]);
 
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, SMART_AUDIT_COLLECTION), (snap) => {
+      const entries = snap.docs.map((item) => ({ id: item.id, ...item.data() }))
+        .filter((item) => item.dateKey === dateKey)
+        .sort((a, b) => {
+          const at = (v) => v?.createdAt?.toMillis?.() || (v?.createdAt?.seconds || 0) * 1000 || 0;
+          return at(b) - at(a);
+        });
+      setAuditRows(entries);
+    });
+    return () => unsub();
+  }, [dateKey]);
+
+  const handleOpenReport = (row, report) => {
+    const path = REPORT_MANAGEMENT_ROUTES[report.key];
+    if (!path || !report.bestReportId) return;
+    // Carry a precise report reference to the management screen. Existing management pages
+    // may need to implement the query-param selection to open the individual record.
+    navigate(`${path}?reportId=${encodeURIComponent(report.bestReportId)}&sourceCollection=${encodeURIComponent(report.sourceCollection || "")}`, {
+      state: { smartIntelligenceReturnDate: dateKey, smartIntelligenceAssignmentId: row.id, reportId: report.bestReportId },
+    });
+  };
+
+  const handleReviewReport = async (row, report) => {
+    try {
+      setReviewingId(`${row.id}:${report.key}`);
+      await markSmartReportReviewed({ assignment: row, report, actor: user });
+      setMessage(`${report.label}: review recorded for ${row.department}.`);
+    } catch (error) {
+      setMessage(error?.message || "Could not record report review.");
+    } finally {
+      setReviewingId("");
+    }
+  };
+
   const handleSelectSupervisor = async (row, supervisor) => {
     if (!row?.id || !supervisor?.userId) return;
     try {
@@ -217,9 +282,18 @@ export default function SmartIntelligenceTodayPage() {
 
   const assigned = rows.filter((row) => clean(row.assignedDutyManagerId));
   const waiting = rows.filter((row) => !clean(row.assignedDutyManagerId));
-  const myRows = user?.role === "duty_manager"
-    ? rows.filter((row) => row.assignedDutyManagerId === user.id)
-    : rows;
+  const myRows = rows.filter((row) => isStationManager || row.assignedDutyManagerId === user?.id)
+    .filter((row) => !dutyFilter || row.assignedDutyManagerId === dutyFilter);
+  const visibleAudit = auditRows.filter((row) => isStationManager || row.actorId === user?.id || row.assignedDutyManagerId === user?.id)
+    .filter((row) => !dutyFilter || row.actorId === dutyFilter || row.assignedDutyManagerId === dutyFilter);
+  const dutyActivity = Object.values(visibleAudit.reduce((acc, row) => {
+    const id = row.actorId || row.assignedDutyManagerId || "system";
+    if (!acc[id]) acc[id] = { id, name: row.actorName || row.assignedDutyManagerName || "System", events: 0, reviews: 0, completed: 0 };
+    acc[id].events += 1;
+    if (row.eventType === "INDIVIDUAL_REPORT_REVIEWED") acc[id].reviews += 1;
+    if (row.eventType === "REPORT_PACKAGE_COMPLETED") acc[id].completed += 1;
+    return acc;
+  }, {}));
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
@@ -227,14 +301,27 @@ export default function SmartIntelligenceTodayPage() {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <div>
             <div style={{ fontSize: 12, fontWeight: 900, color: "#2563eb", textTransform: "uppercase", letterSpacing: ".08em" }}>Smart Intelligence</div>
-            <h1 style={{ margin: "4px 0 5px", fontSize: 26, color: "#0f172a" }}>Today · {dateKey}</h1>
+            <h1 style={{ margin: "4px 0 5px", fontSize: 26, color: "#0f172a" }}>{isToday ? "Today" : "History"} · {dateKey}</h1>
             <p style={{ margin: 0, color: "#64748b", maxWidth: 820, lineHeight: 1.55 }}>
               Daily ownership, report-package monitoring, follow-up alerts and review audit for TPA operations.
             </p>
           </div>
-          <button type="button" onClick={runEngine} disabled={running} style={{ border: 0, borderRadius: 12, padding: "10px 14px", background: "#0f4c81", color: "#fff", fontWeight: 850, cursor: running ? "wait" : "pointer" }}>
+          <button type="button" onClick={runEngine} disabled={running || !isToday} style={{ border: 0, borderRadius: 12, padding: "10px 14px", background: "#0f4c81", color: "#fff", fontWeight: 850, cursor: running ? "wait" : "pointer" }}>
             {running ? "Checking..." : "Refresh Smart Intelligence"}
           </button>
+        </div>
+      </Card>
+
+      <Card>
+        <div style={{ display: "flex", gap: 12, alignItems: "end", flexWrap: "wrap" }}>
+          <label style={{ display: "grid", gap: 5, fontSize: 12, fontWeight: 800 }}>Review date
+            <input type="date" max={todayKey} value={dateKey} onChange={(e) => changeDate(e.target.value || todayKey)} style={{ border: "1px solid #cbd5e1", padding: 9, borderRadius: 9 }}/>
+          </label>
+          <button type="button" onClick={() => changeDate(todayKey)} style={{ padding: "9px 12px", border: "1px solid #cbd5e1", borderRadius: 9, background: "#fff" }}>Today</button>
+          {isStationManager && <label style={{ display: "grid", gap: 5, fontSize: 12, fontWeight: 800 }}>Duty Manager
+            <select value={dutyFilter} onChange={(e) => setDutyFilter(e.target.value)} style={{ border: "1px solid #cbd5e1", padding: 9, borderRadius: 9 }}><option value="">All Duty Managers</option>{dutyUsers.map((dm) => <option key={dm.id} value={dm.id}>{dm.displayName || dm.fullName || dm.name || dm.username || dm.id}</option>)}</select>
+          </label>}
+          {!isToday && <span style={{ color: "#64748b", fontSize: 12 }}>Historical records are read-only; no reassignment or approval changes.</span>}
         </div>
       </Card>
 
@@ -266,14 +353,14 @@ export default function SmartIntelligenceTodayPage() {
         <Card><div style={{ fontSize: 12, color: "#64748b", fontWeight: 800 }}>Departments</div><div style={{ fontSize: 28, fontWeight: 950 }}>{rows.length}</div></Card>
         <Card><div style={{ fontSize: 12, color: "#64748b", fontWeight: 800 }}>Assigned</div><div style={{ fontSize: 28, fontWeight: 950, color: "#15803d" }}>{assigned.length}</div></Card>
         <Card><div style={{ fontSize: 12, color: "#64748b", fontWeight: 800 }}>Waiting Reviewer</div><div style={{ fontSize: 28, fontWeight: 950, color: waiting.length ? "#b45309" : "#15803d" }}>{waiting.length}</div></Card>
-        {summary && <Card><div style={{ fontSize: 12, color: "#64748b", fontWeight: 800 }}>Active Duty Managers</div><div style={{ fontSize: 28, fontWeight: 950 }}>{summary.activeDutyManagers?.length || 0}</div></Card>}
+        {isStationManager && summary && <Card><div style={{ fontSize: 12, color: "#64748b", fontWeight: 800 }}>Active Duty Managers</div><div style={{ fontSize: 28, fontWeight: 950 }}>{summary.activeDutyManagers?.length || 0}</div></Card>}
       </div>
 
-      <Card>
+      {isStationManager && <Card>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
           <div>
             <h2 style={{ margin: 0, fontSize: 19 }}>Active Duty Managers</h2>
-            <div style={{ marginTop: 4, fontSize: 12.5, color: "#64748b" }}>Smart Intelligence eligibility diagnostic · 75 minute activity window</div>
+            <div style={{ marginTop: 4, fontSize: 12.5, color: "#64748b" }}>Presence diagnostic only · assignments follow the weekly schedule</div>
           </div>
           <span style={{ borderRadius: 999, padding: "6px 10px", fontSize: 12, fontWeight: 900, background: dutyDiagnostics.some((item) => item.eligible) ? "#dcfce7" : "#fee2e2", color: dutyDiagnostics.some((item) => item.eligible) ? "#166534" : "#b91c1c" }}>
             {dutyDiagnostics.filter((item) => item.eligible).length} eligible
@@ -299,7 +386,7 @@ export default function SmartIntelligenceTodayPage() {
             ))}
           </div>
         )}
-      </Card>
+      </Card>}
 
       <Card>
         <h2 style={{ margin: "0 0 12px", fontSize: 19 }}>Daily Review Assignments</h2>
@@ -312,13 +399,15 @@ export default function SmartIntelligenceTodayPage() {
               const reports = Array.isArray(row.requiredReports) ? row.requiredReports : [];
               const reportPackage = Array.isArray(row.reportPackage) ? row.reportPackage : [];
               const pkg = packageStyle(row.reportPackageStatus);
-              const canSelectSupervisor = user?.role === "station_manager" || (user?.role === "duty_manager" && row.assignedDutyManagerId === user?.id);
+              const canSelectSupervisor = isToday && (user?.role === "station_manager" || (user?.role === "duty_manager" && row.assignedDutyManagerId === user?.id));
               const canClose =
                 canSelectSupervisor &&
                 clean(row.responsibleSupervisorName) &&
                 Number(row.reportPackageSummary?.missingCount || 0) === 0 &&
                 Number(row.reportPackageSummary?.followUpCount || 0) === 0 &&
-                row.packageReviewStatus !== "COMPLETED";
+                row.packageReviewStatus !== "COMPLETED" &&
+                reportPackage.filter((item) => item.count > 0 && item.connected && item.status !== "NOT_DUE")
+                  .every((item) => row.reportReviews?.[item.key]?.reportId === item.bestReportId);
 
               return (
                 <div key={row.id} style={{ border: isWaiting ? "1px solid #fed7aa" : "1px solid #dbeafe", background: isWaiting ? "#fff7ed" : "#f8fbff", borderRadius: 14, padding: 14 }}>
@@ -334,7 +423,7 @@ export default function SmartIntelligenceTodayPage() {
                   </div>
 
                   <div style={{ marginTop: 12, display: "grid", gap: 7, fontSize: 13 }}>
-                    <div><strong>Duty Manager:</strong> {row.assignedDutyManagerName || "Waiting for an eligible Duty Manager to enter AeroStation"}</div>
+                    <div><strong>Duty Manager:</strong> {row.assignedDutyManagerName || "No Duty Manager scheduled for this department"}</div>
                     <div><strong>Responsible Supervisor:</strong> {row.responsibleSupervisorName || "Select one of the Supervisors on Duty below"}</div>
 
                     {Array.isArray(row.responsibleSupervisors) && row.responsibleSupervisors.length > 0 && (
@@ -374,7 +463,12 @@ export default function SmartIntelligenceTodayPage() {
                                   {item.count > 0 ? `${item.count} found${item.submittedBy ? ` · Submitted by ${item.submittedBy}` : ""}` : item.status === "NOT_DUE" ? "Monthly requirement · not due yet" : item.status === "NOT_CONNECTED" ? "Source not connected yet" : "No report found for today"}
                                 </div>
                               </div>
-                              <span style={{ borderRadius: 999, padding: "5px 8px", background: st.bg, color: st.color, fontSize: 11, fontWeight: 900 }}>{st.label}</span>
+                              <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
+                                <span style={{ borderRadius: 999, padding: "5px 8px", background: st.bg, color: st.color, fontSize: 11, fontWeight: 900 }}>{st.label}</span>
+                                {item.bestReportId && REPORT_MANAGEMENT_ROUTES[item.key] && <button type="button" onClick={() => handleOpenReport(row, item)} style={{ padding: "5px 8px", border: "1px solid #93c5fd", borderRadius: 8, color: "#1d4ed8", background: "#eff6ff", fontWeight: 800, cursor: "pointer" }}>Open report</button>}
+                                {item.bestReportId && <span style={{ color: row.reportReviews?.[item.key]?.reportId === item.bestReportId ? "#15803d" : "#64748b", fontSize: 11, fontWeight: 800 }}>{row.reportReviews?.[item.key]?.reportId === item.bestReportId ? `Reviewed by ${row.reportReviews[item.key].reviewedByName}` : "Not reviewed"}</span>}
+                                {item.bestReportId && canSelectSupervisor && row.packageReviewStatus !== "COMPLETED" && row.reportReviews?.[item.key]?.reportId !== item.bestReportId && <button type="button" disabled={reviewingId === `${row.id}:${item.key}`} onClick={() => handleReviewReport(row, item)} style={{ padding: "5px 8px", border: "1px solid #86efac", borderRadius: 8, color: "#166534", background: "#f0fdf4", fontWeight: 800, cursor: "pointer" }}>Confirm reviewed</button>}
+                              </div>
                             </div>
                           );
                         })}
@@ -409,6 +503,13 @@ export default function SmartIntelligenceTodayPage() {
             })}
           </div>
         )}
+      </Card>
+
+      <Card>
+        <h2 style={{ margin: "0 0 12px", fontSize: 19 }}>Duty Manager Activity · {dateKey}</h2>
+        {dutyActivity.length ? <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 9 }}>{dutyActivity.map((dm) => <div key={dm.id} style={{ padding: 12, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10 }}><strong>{dm.name}</strong><div style={{ fontSize: 12, marginTop: 6 }}>{dm.events} actions · {dm.reviews} reports reviewed · {dm.completed} packages closed</div></div>)}</div> : <div style={{ color: "#64748b" }}>No recorded activity for this date.</div>}
+        <h3 style={{ fontSize: 15, marginTop: 16 }}>Audit timeline</h3>
+        <div style={{ display: "grid", gap: 6, maxHeight: 380, overflowY: "auto" }}>{visibleAudit.slice(0, 150).map((event) => <div key={event.id} style={{ padding: 9, borderBottom: "1px solid #e2e8f0", fontSize: 12 }}><strong>{event.eventType?.replaceAll("_", " ") || "Activity"}</strong> · {event.department || ""} · {event.actorName || event.assignedDutyManagerName || "System"}<div style={{ color: "#64748b", marginTop: 3 }}>{event.createdAt?.toDate?.()?.toLocaleString("en-US", { timeZone: "America/New_York" }) || "Timestamp pending"}{event.reportKey ? ` · ${SMART_REPORT_LABELS[event.reportKey] || event.reportKey}` : ""}</div></div>)}</div>
       </Card>
 
       {user?.role === "station_manager" && (
