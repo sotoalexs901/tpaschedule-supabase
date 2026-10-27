@@ -81,6 +81,8 @@ export default function SmartIntelligenceTodayPage() {
   const [selectingSupervisorFor, setSelectingSupervisorFor] = useState("");
   const [closingPackageId, setClosingPackageId] = useState("");
   const [dutyUsers, setDutyUsers] = useState([]);
+  const [supervisorUsers, setSupervisorUsers] = useState([]);
+  const [supervisorChoice, setSupervisorChoice] = useState({});
   const [auditRows, setAuditRows] = useState([]);
   const [dutyFilter, setDutyFilter] = useState("");
   const [reviewingId, setReviewingId] = useState("");
@@ -136,6 +138,15 @@ export default function SmartIntelligenceTodayPage() {
   }, [user?.id, user?.role, dateKey]);
 
 
+
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, "users"), (snap) => {
+      setSupervisorUsers(snap.docs.map((item) => ({ id: item.id, ...item.data() }))
+        .filter((item) => clean(item.role).toLowerCase() === "supervisor")
+        .sort((a, b) => clean(a.displayName || a.fullName || a.name || a.username).localeCompare(clean(b.displayName || b.fullName || b.name || b.username))));
+    });
+    return () => unsub();
+  }, []);
 
   useEffect(() => {
     if (!isStationManager) return undefined;
@@ -241,12 +252,12 @@ export default function SmartIntelligenceTodayPage() {
     }
   };
 
-  const handleSelectSupervisor = async (row, supervisor) => {
+  const handleSelectSupervisor = async (row, supervisor, overrideReason = "") => {
     if (!row?.id || !supervisor?.userId) return;
     try {
       setSelectingSupervisorFor(row.id);
       setMessage("");
-      await selectResponsibleSupervisor({ assignmentId: row.id, supervisorUserId: supervisor.userId, actor: user });
+      await selectResponsibleSupervisor({ assignmentId: row.id, supervisorUserId: supervisor.userId, actor: user, overrideReason });
       await refreshSmartReportPackages({ actor: user });
       setMessage(`${supervisor.name} selected as responsible supervisor for ${row.department}.`);
     } catch (error) {
@@ -425,6 +436,30 @@ export default function SmartIntelligenceTodayPage() {
                   <div style={{ marginTop: 12, display: "grid", gap: 7, fontSize: 13 }}>
                     <div><strong>Duty Manager:</strong> {row.assignedDutyManagerName || "No Duty Manager scheduled for this department"}</div>
                     <div><strong>Responsible Supervisor:</strong> {row.responsibleSupervisorName || "Select one of the Supervisors on Duty below"}</div>
+
+                    {canSelectSupervisor && (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginTop: 8 }}>
+                        <label style={{ fontSize: 12, fontWeight: 800 }} htmlFor={`supervisor-${row.id}`}>Change Supervisor:</label>
+                        <select id={`supervisor-${row.id}`} value={supervisorChoice[row.id] || ""}
+                          onChange={(event) => setSupervisorChoice((current) => ({ ...current, [row.id]: event.target.value }))}
+                          style={{ padding: 8, borderRadius: 8, border: "1px solid #cbd5e1", minWidth: 210 }}>
+                          <option value="">Select supervisor</option>
+                          {supervisorUsers.map((sup) => <option key={sup.id} value={sup.id}>{sup.displayName || sup.fullName || sup.name || sup.username || sup.id} · {sup.department || sup.airline || "Supervisor"}</option>)}
+                        </select>
+                        <button type="button" disabled={!supervisorChoice[row.id] || selectingSupervisorFor === row.id}
+                          onClick={async () => {
+                            const selectedId = supervisorChoice[row.id];
+                            const scheduled = (row.responsibleSupervisors || []).find((item) => item.userId === selectedId);
+                            const sup = supervisorUsers.find((item) => item.id === selectedId);
+                            if (!sup) return;
+                            const reason = scheduled ? "" : window.prompt("Reason for supervisor coverage change (required):", "Coverage change");
+                            if (!scheduled && !clean(reason)) return;
+                            if (!window.confirm(`Assign ${sup.displayName || sup.fullName || sup.name || sup.username} as responsible supervisor for ${row.department} on ${row.dateKey}?`)) return;
+                            await handleSelectSupervisor(row, { userId: selectedId, name: sup.displayName || sup.fullName || sup.name || sup.username }, reason || "");
+                          }}
+                          style={{ padding: "8px 12px", border: 0, borderRadius: 8, background: "#0f4c81", color: "white", fontWeight: 800, cursor: "pointer" }}>Save Supervisor</button>
+                      </div>
+                    )}
 
                     {Array.isArray(row.responsibleSupervisors) && row.responsibleSupervisors.length > 0 && (
                       <div style={{ display: "grid", gap: 7 }}>
