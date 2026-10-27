@@ -308,7 +308,7 @@ function assignmentId(dateKey, rule) {
   return `${dateKey}__${slug(rule.id || rule.department)}`;
 }
 
-export async function selectResponsibleSupervisor({ assignmentId: id, supervisorUserId, actor } = {}) {
+export async function selectResponsibleSupervisor({ assignmentId: id, supervisorUserId, actor, overrideReason = "" } = {}) {
   const assignmentKey = clean(id);
   const selectedUserId = clean(supervisorUserId);
   if (!assignmentKey || !selectedUserId) {
@@ -332,16 +332,28 @@ export async function selectResponsibleSupervisor({ assignmentId: id, supervisor
   const candidates = Array.isArray(assignment.responsibleSupervisors)
     ? assignment.responsibleSupervisors
     : [];
-  const selected = candidates.find((item) => clean(item?.userId) === selectedUserId);
-  if (!selected) {
-    throw new Error("Selected supervisor is not listed as on duty for this department today.");
+  let selected = candidates.find((item) => clean(item?.userId) === selectedUserId);
+  const isScheduleOverride = !selected;
+  if (isScheduleOverride) {
+    if (!clean(overrideReason)) throw new Error("Enter a reason for changing to an unscheduled supervisor.");
+    const userSnap = await getDoc(doc(db, "users", selectedUserId));
+    if (!userSnap.exists() || upper(userSnap.data()?.role) !== "SUPERVISOR") {
+      throw new Error("The selected user is not a valid Supervisor.");
+    }
+    const supervisorUser = userSnap.data();
+    selected = {
+      userId: selectedUserId,
+      employeeId: clean(supervisorUser.employeeId || supervisorUser.linkedEmployeeId),
+      name: visibleName(supervisorUser),
+    };
   }
 
   const patch = {
     responsibleSupervisorId: clean(selected.employeeId),
     responsibleSupervisorUserId: clean(selected.userId),
     responsibleSupervisorName: clean(selected.name),
-    responsibleSupervisorSource: "manual_selection_from_approved_schedule",
+    responsibleSupervisorSource: isScheduleOverride ? "manual_schedule_override" : "manual_selection_from_approved_schedule",
+    responsibleSupervisorOverrideReason: isScheduleOverride ? clean(overrideReason) : "",
     responsibleSupervisorSelectedById: clean(actor?.id),
     responsibleSupervisorSelectedByName: actor ? visibleName(actor) : "",
     responsibleSupervisorSelectedAt: serverTimestamp(),
@@ -354,6 +366,10 @@ export async function selectResponsibleSupervisor({ assignmentId: id, supervisor
     doc(db, SMART_AUDIT_COLLECTION, `${assignment.dateKey || tampaDateKey()}__${slug(assignment.ruleId || assignment.department)}__supervisor_selected_${Date.now()}`),
     {
       eventType: "RESPONSIBLE_SUPERVISOR_SELECTED",
+      previousSupervisorName: clean(assignment.responsibleSupervisorName),
+      previousSupervisorUserId: clean(assignment.responsibleSupervisorUserId),
+      overrideReason: isScheduleOverride ? clean(overrideReason) : "",
+      scheduleOverride: isScheduleOverride,
       dateKey: assignment.dateKey || tampaDateKey(),
       ruleId: assignment.ruleId || "",
       department: assignment.department || "",
@@ -568,16 +584,16 @@ export async function ensureDailySmartAssignments({ actor } = {}) {
       responsibleSupervisors: supervisorContext.supervisors,
       responsibleSupervisorNames: supervisorNames,
       responsibleSupervisorCount: supervisorContext.supervisors.length,
-      responsibleSupervisorId: clean(existing?.responsibleSupervisorSelectedAt)
+      responsibleSupervisorId: Boolean(existing?.responsibleSupervisorSelectedAt)
         ? clean(existing?.responsibleSupervisorId)
         : (primarySupervisor?.employeeId || ""),
-      responsibleSupervisorUserId: clean(existing?.responsibleSupervisorSelectedAt)
+      responsibleSupervisorUserId: Boolean(existing?.responsibleSupervisorSelectedAt)
         ? clean(existing?.responsibleSupervisorUserId)
         : (primarySupervisor?.userId || ""),
-      responsibleSupervisorName: clean(existing?.responsibleSupervisorSelectedAt)
+      responsibleSupervisorName: Boolean(existing?.responsibleSupervisorSelectedAt)
         ? clean(existing?.responsibleSupervisorName)
         : (primarySupervisor?.name || ""),
-      responsibleSupervisorSource: clean(existing?.responsibleSupervisorSelectedAt)
+      responsibleSupervisorSource: Boolean(existing?.responsibleSupervisorSelectedAt)
         ? (existing?.responsibleSupervisorSource || "manual_selection_from_approved_schedule")
         : supervisorContext.source,
       approvedScheduleIds: supervisorContext.scheduleIds,
