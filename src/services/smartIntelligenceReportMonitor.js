@@ -598,6 +598,7 @@ export async function completeSmartReportPackage({ assignment, actor } = {}) {
 
   await updateDoc(doc(db, SMART_ASSIGNMENTS_COLLECTION, assignment.id), {
     packageReviewStatus: "COMPLETED",
+    dutyActionTakenAt: serverTimestamp(),
     packageReviewedAt: serverTimestamp(),
     packageReviewedById: actor.id,
     packageReviewedByName: reviewerName,
@@ -663,7 +664,7 @@ export async function markSmartReportReviewed({ assignment, report, actor } = {}
   if (!current || current.bestReportId !== report.bestReportId) throw new Error("Report has changed. Refresh before reviewing.");
   const reviewerName = actor.displayName || actor.fullName || actor.name || actor.username || "Management";
   const review = { reportId: report.bestReportId, sourceCollection: report.sourceCollection || "", reviewedById: actor.id, reviewedByName: reviewerName, reviewedAt: new Date().toISOString() };
-  await updateDoc(doc(db, SMART_ASSIGNMENTS_COLLECTION, assignment.id), { [`reportReviews.${report.key}`]: review, updatedAt: serverTimestamp() });
+  await updateDoc(doc(db, SMART_ASSIGNMENTS_COLLECTION, assignment.id), { [`reportReviews.${report.key}`]: review, dutyActionTakenAt: serverTimestamp(), updatedAt: serverTimestamp() });
   await addDoc(collection(db, SMART_AUDIT_COLLECTION), {
     eventType: "INDIVIDUAL_REPORT_REVIEWED", dateKey: assignment.dateKey, assignmentId: assignment.id,
     department: assignment.department || "", reportKey: report.key, reportId: report.bestReportId,
