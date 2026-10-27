@@ -142,4 +142,4 @@ async function run() {
   console.log(JSON.stringify({task:'smart-intelligence-pool',now:nowKey,rules:rules.length,assigned,alerts,skipped,inspectedLedgers:ls.size}));
   return {statusCode:200};
 }
-exports.handler=schedule('*/5 * * *',run);
+exports.handler=schedule('*/5 * * * *',run);
