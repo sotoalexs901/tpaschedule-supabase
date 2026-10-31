@@ -43,7 +43,7 @@ export async function releaseGse({equipment,user,notes,finalRepairCost}){if(!not
 export async function updateGseGpsDevice({equipment,user,gpsDeviceId='',gpsProvider='',notes=''}){if(!idOf(user))throw new Error('User identity required.');if(String(user.role||'').toLowerCase()!=='station_manager'&&String(user.role||'').toLowerCase()!=='duty_manager')throw new Error('Management access required.');const ref=doc(db,'gse_equipment',equipment.id);await runTransaction(db,async tx=>{const snap=await tx.get(ref);if(!snap.exists())throw new Error('Equipment not found.');const event=doc(collection(db,'gse_inspections'));tx.update(ref,{gpsDeviceId:String(gpsDeviceId).trim()||null,gpsProvider:String(gpsProvider).trim(),gpsDeviceNotes:String(notes).trim(),gpsDeviceUpdatedAt:serverTimestamp(),updatedAt:serverTimestamp()});tx.set(event,{equipmentId:equipment.id,eventType:'GPS_DEVICE_UPDATED',employeeId:idOf(user),gpsDeviceId:String(gpsDeviceId).trim()||null,gpsProvider:String(gpsProvider).trim(),createdAt:serverTimestamp()});});}
 
 // Management-only asset corrections. Archive instead of deleting historical evidence.
-export async function updateGseEquipment({equipment,user,type,serialNumber,location,locationId,motorized=false,vinNumber="",year="",fuelType="",reason}) {
+export async function updateGseEquipment({equipment,user,type,serialNumber,location,locationId,motorized=false,equipmentNumber="",vinNumber="",year="",fuelType="",reason}) {
   if (!['station_manager','duty_manager'].includes(String(user?.role||'').toLowerCase())) throw new Error('Management access required.');
   if (!idOf(user)) throw new Error('User identity required.');
   if (!type?.trim() || !location?.trim() || !reason?.trim()) throw new Error('Type, location and edit reason are required.');
@@ -52,10 +52,10 @@ export async function updateGseEquipment({equipment,user,type,serialNumber,locat
     const snap=await tx.get(ref);
     if (!snap.exists() || snap.data().archived===true) throw new Error('Equipment is not active.');
     const before=snap.data();
-    const patch={equipmentType:type.trim(),serialNumber:String(serialNumber||'').trim(),...assetFields({motorized,vinNumber,year,fuelType}),location:location.trim(),locationId:locationId||'',updatedAt:serverTimestamp(),lastEditedBy:idOf(user)};
+    const patch={equipmentType:type.trim(),serialNumber:String(serialNumber||'').trim(),equipmentNumber:motorized?String(equipmentNumber||'').trim():'',...assetFields({motorized,vinNumber,year,fuelType}),location:location.trim(),locationId:locationId||'',updatedAt:serverTimestamp(),lastEditedBy:idOf(user)};
     const event=doc(collection(db,'gse_inspections'));
     tx.update(ref,patch);
-    tx.set(event,{equipmentId:equipment.id,eventType:'EQUIPMENT_EDITED',before:{equipmentType:before.equipmentType||'',serialNumber:before.serialNumber||'',motorized:before.motorized??null,vinNumber:before.vinNumber||'',year:before.year??null,fuelType:before.fuelType||'',location:before.location||'',locationId:before.locationId||''},after:{equipmentType:patch.equipmentType,serialNumber:patch.serialNumber,motorized:patch.motorized,vinNumber:patch.vinNumber,year:patch.year,fuelType:patch.fuelType,location:patch.location,locationId:patch.locationId},reason:reason.trim(),employeeId:idOf(user),employeeName:nameOf(user),createdAt:serverTimestamp()});
+    tx.set(event,{equipmentId:equipment.id,eventType:'EQUIPMENT_EDITED',before:{equipmentType:before.equipmentType||'',serialNumber:before.serialNumber||'',equipmentNumber:before.equipmentNumber||'',motorized:before.motorized??null,vinNumber:before.vinNumber||'',year:before.year??null,fuelType:before.fuelType||'',location:before.location||'',locationId:before.locationId||''},after:{equipmentType:patch.equipmentType,serialNumber:patch.serialNumber,equipmentNumber:patch.equipmentNumber,motorized:patch.motorized,vinNumber:patch.vinNumber,year:patch.year,fuelType:patch.fuelType,location:patch.location,locationId:patch.locationId},reason:reason.trim(),employeeId:idOf(user),employeeName:nameOf(user),createdAt:serverTimestamp()});
   });
 }
 export async function archiveGseEquipment({equipment,user,reason}) {
@@ -68,5 +68,26 @@ export async function archiveGseEquipment({equipment,user,reason}) {
     const event=doc(collection(db,'gse_inspections'));
     tx.update(ref,{archived:true,archivedAt:serverTimestamp(),archivedBy:idOf(user),archiveReason:reason.trim(),updatedAt:serverTimestamp()});
     tx.set(event,{equipmentId:equipment.id,eventType:'EQUIPMENT_ARCHIVED',reason:reason.trim(),employeeId:idOf(user),employeeName:nameOf(user),createdAt:serverTimestamp()});
+  });
+}
+
+// One atomic registration + first inspection: no second form or orphan pending asset.
+export async function registerAndInspectGse({code,type,serialNumber='',motorized=false,equipmentNumber='',vinNumber='',year='',fuelType='',location,locationId='',gps=null,condition,notes='',photos,estimatedRepairCost='',user}) {
+  const id=getGseCode(code),employeeId=idOf(user);
+  if(!employeeId)throw new Error('User identity is required.');
+  if(!/^[A-Z0-9_-]{3,60}$/.test(id))throw new Error('Invalid equipment ID.');
+  if(!type?.trim()||!location?.trim()||!locationId)throw new Error('Equipment type and saved TPA location are required.');
+  if(![GSE_STATUS.IN,GSE_STATUS.OUT].includes(condition))throw new Error('Select equipment condition.');
+  if(!Array.isArray(photos)||photos.length<1||photos.length>2)throw new Error('One or two photos required.');
+  if(condition===GSE_STATUS.OUT&&(!notes.trim()||estimatedRepairCost===''||!validMoney(estimatedRepairCost)))throw new Error('Defect description and estimated repair cost are required.');
+  const details=assetFields({motorized,vinNumber,year,fuelType});
+  if(motorized&&!String(equipmentNumber||'').trim())throw new Error('Equipment / Fleet Number is required.');
+  const ref=doc(db,'gse_equipment',id);
+  await runTransaction(db,async tx=>{
+    if((await tx.get(ref)).exists())throw new Error('Equipment ID already exists. Use Edit or Inspect Existing.');
+    const event=doc(collection(db,'gse_inspections'));
+    const repairFields=condition===GSE_STATUS.OUT?{estimatedRepairCost:num(estimatedRepairCost),outOfServiceAt:serverTimestamp(),repairStatus:'OPEN'}:{};
+    tx.set(ref,{equipmentCode:id,equipmentType:type.trim(),serialNumber:String(serialNumber).trim(),equipmentNumber:motorized?String(equipmentNumber).trim():'',...details,location,locationId,lastGps:gps||null,photos,status:condition,...repairFields,createdBy:employeeId,createdAt:serverTimestamp(),updatedAt:serverTimestamp(),lastInspectionAt:serverTimestamp(),lastInspectedBy:employeeId,gpsDeviceId:null,archived:false});
+    tx.set(event,{equipmentId:id,eventType:'INITIAL_INSPECTION',condition,location,locationId,gps:gps||null,photos,notes:String(notes).trim(),estimatedRepairCost:condition===GSE_STATUS.OUT?num(estimatedRepairCost):null,employeeId,employeeName:nameOf(user),createdAt:serverTimestamp()});
   });
 }
