@@ -1,40 +1,17 @@
-import React, { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { useUser } from '../UserContext.jsx';
-import { GSE_LOCATIONS, getGseCode, inspectGse, watchGse } from '../services/gseService.js';
-
-const field = { width: '100%', padding: 12, border: '1px solid #cbd5e1', borderRadius: 10, boxSizing: 'border-box' };
-export default function GseInventoryPage() {
-  const { user } = useUser();
-  const [params] = useSearchParams();
-  const [items, setItems] = useState([]);
-  const [code, setCode] = useState(getGseCode(params.get('gse')));
-  const [condition, setCondition] = useState('IN_SERVICE');
-  const [location, setLocation] = useState(GSE_LOCATIONS[0]);
-  const [notes, setNotes] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState('');
-  useEffect(() => watchGse(setItems, e => setMessage(e.message)), []);
-  useEffect(() => setCode(getGseCode(params.get('gse'))), [params]);
-  const equipment = items.find(x => x.id === getGseCode(code));
-  useEffect(() => { if (equipment?.location && GSE_LOCATIONS.includes(equipment.location)) setLocation(equipment.location); }, [equipment?.id, equipment?.location]);
-  async function submit(e) {
-    e.preventDefault(); setBusy(true); setMessage('');
-    try { await inspectGse({ code, condition, location, notes, user }); setMessage('Inspection saved successfully.'); setNotes(''); }
-    catch (err) { setMessage(err.message || 'Could not save inspection.'); }
-    finally { setBusy(false); }
-  }
-  return <div style={{ maxWidth: 740, margin: '0 auto', color: '#0f172a' }}>
-    <h1>GSE Inventory</h1><p>Scan the equipment QR with your phone camera or enter the equipment ID to inspect it.</p>
-    <form onSubmit={submit} style={{ background: 'white', padding: 22, borderRadius: 18, display: 'grid', gap: 14 }}>
-      <label>Equipment QR / ID<input style={field} value={code} onChange={e => setCode(e.target.value)} placeholder="GSE-001" required /></label>
-      {equipment ? <div style={{ background: '#eff6ff', padding: 14, borderRadius: 12 }}><strong>{equipment.id} · {equipment.equipmentType}</strong><div>Current status: {equipment.status || 'PENDING_INSPECTION'}</div><div>Current location: {equipment.location || 'Not set'}</div></div> : <p style={{ color: '#b45309' }}>Equipment not found. Management must register it before inspection.</p>}
-      <label>Inspection result<select style={field} value={condition} onChange={e => setCondition(e.target.value)}><option value="IN_SERVICE">In Service</option><option value="OUT_OF_SERVICE">Out of Service</option></select></label>
-      <label>Parking location<select style={field} value={location} onChange={e => setLocation(e.target.value)}>{GSE_LOCATIONS.map(x => <option key={x}>{x}</option>)}</select></label>
-      <label>Inspection notes<textarea style={field} value={notes} onChange={e => setNotes(e.target.value)} rows={3} placeholder={condition === 'OUT_OF_SERVICE' ? 'Required: describe the defect' : 'Optional notes'} /></label>
-      <button disabled={busy || !equipment || (condition === 'OUT_OF_SERVICE' && !notes.trim())} style={{ padding: 14, background: '#1769aa', color: 'white', border: 0, borderRadius: 12, cursor: 'pointer' }}>{busy ? 'Saving...' : 'Submit Inspection'}</button>
-      {message && <p role="status">{message}</p>}
-    </form>
-    <p style={{ fontSize: 13, color: '#64748b' }}>QR codes should link to /gse/inventory?gse=GSE-001. An inspection is required before the equipment becomes In Service.</p>
-  </div>;
+import React,{useEffect,useMemo,useState} from 'react';
+import {useSearchParams} from 'react-router-dom';
+import {useUser} from '../UserContext.jsx';
+import {getGseCode,inspectGse,watchGse,watchGseLocations,nearestGseLocation,uploadGsePhotos} from '../services/gseService.js';
+const field={width:'100%',padding:12,border:'1px solid #cbd5e1',borderRadius:10,boxSizing:'border-box'};
+export default function GseInventoryPage(){const {user}=useUser();const [params]=useSearchParams();const [items,setItems]=useState([]),[locations,setLocations]=useState([]);const [code,setCode]=useState(getGseCode(params.get('gse'))),[condition,setCondition]=useState('IN_SERVICE'),[locationId,setLocationId]=useState(''),[notes,setNotes]=useState(''),[estimate,setEstimate]=useState(''),[photos,setPhotos]=useState([]),[gps,setGps]=useState(null),[busy,setBusy]=useState(false),[capturing,setCapturing]=useState(false),[message,setMessage]=useState('');
+useEffect(()=>watchGse(setItems,e=>setMessage(e.message)),[]);useEffect(()=>watchGseLocations(setLocations,e=>setMessage(e.message)),[]);useEffect(()=>setCode(getGseCode(params.get('gse'))),[params]);const equipment=items.find(x=>x.id===getGseCode(code));const activeLocations=useMemo(()=>locations.filter(x=>x.active!==false),[locations]);useEffect(()=>{if(equipment?.locationId&&activeLocations.some(x=>x.id===equipment.locationId))setLocationId(equipment.locationId);},[equipment?.id,equipment?.locationId,activeLocations]);
+const suggested=useMemo(()=>nearestGseLocation(gps,activeLocations),[gps,activeLocations]);
+const location=activeLocations.find(x=>x.id===locationId);
+function capture(){if(!navigator.geolocation){setMessage('GPS unavailable on this device.');return;}setCapturing(true);setMessage('');navigator.geolocation.getCurrentPosition(p=>{const point={latitude:Number(p.coords.latitude.toFixed(7)),longitude:Number(p.coords.longitude.toFixed(7)),accuracyMeters:Math.round(p.coords.accuracy||0),capturedAt:new Date().toISOString()};setGps(point);const near=nearestGseLocation(point,activeLocations);if(near)setLocationId(near.id);setMessage(near?`GPS matched: ${near.name}. Confirm before saving.`:'GPS captured. Select the registered parking area manually.');setCapturing(false);},e=>{setMessage(`GPS capture failed: ${e.message}. Select a location manually.`);setCapturing(false);},{enableHighAccuracy:true,timeout:20000,maximumAge:0});}
+async function submit(e){e.preventDefault();setBusy(true);setMessage('');try{if(!equipment)throw new Error('Equipment must be registered by management.');if(!location)throw new Error('Select a saved TPA location.');if(photos.length<1||photos.length>2)throw new Error('Select 1 or 2 photos.');if(condition==='OUT_OF_SERVICE'&&(!notes.trim()||estimate.trim()===''||!Number.isFinite(Number(estimate))||Number(estimate)<0))throw new Error('Describe defect and enter estimated repair cost.');const uploaded=await uploadGsePhotos(code,photos);await inspectGse({code,condition,location:location.name,locationId:location.id,gps,notes,photos:uploaded,estimatedRepairCost:estimate,user});setMessage('Inspection saved.');setNotes('');setEstimate('');setPhotos([]);}catch(err){setMessage(err.message||'Unable to save. Uploaded photos may need cleanup if saving failed.');}finally{setBusy(false);}}
+return <main style={{maxWidth:780,margin:'0 auto',padding:16,color:'#0f172a'}}><h1>GSE Equipment Inspection</h1><p>Scan QR, photograph the equipment, confirm its parking location and condition.</p><form onSubmit={submit} style={{background:'white',padding:20,borderRadius:16,display:'grid',gap:14}}><label>Equipment ID / QR<input style={field} value={code} onChange={e=>setCode(e.target.value)} required /></label>{equipment?<div style={{background:'#eff6ff',padding:12,borderRadius:10}}><strong>{equipment.id} · {equipment.equipmentType}</strong><div>Status: {equipment.status||'PENDING_INSPECTION'}</div><div>Current location: {equipment.location||'Not set'}</div></div>:<p style={{color:'#b45309'}}>Equipment not registered. Contact management.</p>}
+<label>Condition<select style={field} value={condition} onChange={e=>setCondition(e.target.value)}><option value="IN_SERVICE">Good / Fair — In Service</option><option value="OUT_OF_SERVICE">Poor / Unsafe — Out of Service</option></select></label>{condition==='OUT_OF_SERVICE'&&<label>Estimated repair cost (USD)<input style={field} type="number" min="0" step="0.01" required value={estimate} onChange={e=>setEstimate(e.target.value)} placeholder="0.00" /></label>}
+<label>Photos (1–2 required, max 8 MB each)<input style={field} type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={e=>{const next=Array.from(e.target.files||[]);if(next.length>2||next.some(f=>f.size>8*1024*1024||!['image/jpeg','image/png','image/webp'].includes(f.type))){setPhotos([]);setMessage('Select up to two JPG/PNG/WebP photos, 8 MB max each.');e.target.value='';return;}setPhotos(next);}} /></label>{photos.length>0&&<div>{photos.map((p,i)=><span key={`${p.name}-${i}`} style={{display:'block',fontSize:13}}>{i+1}. {p.name}</span>)}</div>}
+<label>Saved TPA parking location<select style={field} value={locationId} onChange={e=>setLocationId(e.target.value)} required><option value="">Select location</option>{activeLocations.map(x=><option key={x.id} value={x.id}>{x.name} · {x.area}</option>)}</select></label><button type="button" disabled={capturing||busy} onClick={capture} style={{padding:12,borderRadius:10}}>{capturing?'Capturing GPS…':'📍 Capture GPS / Suggest Location'}</button>{gps&&<small>GPS: {gps.latitude}, {gps.longitude} · ±{gps.accuracyMeters} m {suggested?`· Suggested: ${suggested.name}`:''}. Indoor GPS may be inaccurate.</small>}
+<label>Inspection notes / Defect description<textarea style={field} rows={3} required={condition==='OUT_OF_SERVICE'} value={notes} onChange={e=>setNotes(e.target.value)} placeholder={condition==='OUT_OF_SERVICE'?'Required: describe the defect':'Optional notes'} /></label><button disabled={busy||!equipment||!locationId||photos.length<1} style={{padding:14,background:'#1769aa',color:'white',border:0,borderRadius:12}}>{busy?'Saving…':'Submit Inspection'}</button>{message&&<p role="status">{message}</p>}</form><p style={{fontSize:12,color:'#64748b'}}>An Out of Service unit requires management authorization and a new inspection before returning to service. Avoid passenger faces, badges and restricted security information in photos.</p></main>;
 }
