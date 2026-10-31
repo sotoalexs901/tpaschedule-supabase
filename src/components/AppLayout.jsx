@@ -1512,8 +1512,8 @@ export default function AppLayout() {
 
     if (canSubmitFuel) {
       submissionReports.push({
-        to: "/fuel-entry",
-        label: "Fuel Entry",
+        to: "/ramp",
+        label: "Ramp Operations",
         icon: "\u{26FD}",
       });
     }
@@ -1625,8 +1625,8 @@ export default function AppLayout() {
 
     if (canManageFuel) {
       managementReports.push({
-        to: "/fuel-management",
-        label: "Fuel Management",
+        to: "/ramp/management",
+        label: "Ramp Management",
         icon: "\u{26FD}",
       });
     }
