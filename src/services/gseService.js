@@ -4,7 +4,7 @@ import { db } from '../firebase';
 
 export const GSE_STATUS = { PENDING: 'PENDING_INSPECTION', IN: 'IN_SERVICE', OUT: 'OUT_OF_SERVICE' };
 export const GSE_LOCATIONS = ['Parking Area 1', 'Parking Area 2', 'Maintenance Area', 'Other'];
-export const GSE_TYPES = ['Baggage Cart', 'Baggage Tug', 'Belt Loader', 'Pushback Tractor', 'Dolly', 'Stairs', 'Other'];
+export const GSE_TYPES = ['Baggage Cart', 'Baggage Tug', 'Belt Loader', 'Pushback Tractor', 'Tow Bar', 'Lav Cart', 'Regulated Garbage Cart', 'Water Cart', 'Golf Cart', 'Dolly', 'Stairs', 'Other'];
 const idOf = u => String(u?.id || u?.uid || u?.employeeId || '');
 const nameOf = u => u?.displayName || u?.fullName || u?.name || u?.username || '';
 const validMoney = value => Number.isFinite(Number(value)) && Number(value) >= 0;
