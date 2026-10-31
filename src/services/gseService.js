@@ -8,8 +8,18 @@ export const GSE_TYPES = ['Baggage Cart', 'Baggage Tug', 'Belt Loader', 'Pushbac
 const idOf = u => String(u?.id || u?.uid || u?.employeeId || '');
 const nameOf = u => u?.displayName || u?.fullName || u?.name || u?.username || '';
 const validMoney = value => Number.isFinite(Number(value)) && Number(value) >= 0;
+export const GSE_FUEL_TYPES = ['GASOLINE', 'DIESEL'];
+function assetFields({motorized=false,vinNumber='',year='',fuelType=''}) {
+  if (!motorized) return {motorized:false,vinNumber:'',year:null,fuelType:''};
+  const vin=String(vinNumber||'').trim().toUpperCase();
+  const yr=Number(year);
+  if (!vin || vin.length>60) throw new Error('VIN / chassis number is required (max 60 characters).');
+  if (!Number.isInteger(yr) || yr<1950 || yr>new Date().getFullYear()+1) throw new Error('Enter a valid equipment year.');
+  if (!GSE_FUEL_TYPES.includes(fuelType)) throw new Error('Select Gasoline or Diesel.');
+  return {motorized:true,vinNumber:vin,year:yr,fuelType};
+}
 const num = value => Math.round(Number(value) * 100) / 100;
-export function watchGse(callback, onError) { return onSnapshot(collection(db, 'gse_equipment'), snap => callback(snap.docs.map(d => ({ id: d.id, ...d.data() }))), onError); }
+export function watchGse(callback, onError) { return onSnapshot(collection(db, 'gse_equipment'), snap => callback(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(x => x.archived !== true)), onError); }
 export function watchGseRepairs(callback, onError) { return onSnapshot(collection(db, 'gse_repairs'), snap => callback(snap.docs.map(d => ({ id: d.id, ...d.data() }))), onError); }
 export function watchGseLocations(callback, onError) { return onSnapshot(collection(db, 'operational_locations'), snap => callback(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(x => x.active !== false)), onError); }
 export function getGseCode(raw) { const value = String(raw || '').trim(); if (!value) return ''; try { const url = new URL(value); return String(url.searchParams.get('gse') || url.pathname.split('/').filter(Boolean).pop() || '').trim().toUpperCase(); } catch { return value.toUpperCase(); } }
@@ -28,6 +38,35 @@ export async function inspectGse({ code, condition, location, locationId, gps, n
     tx.update(ref,patch);tx.set(event,{equipmentId:id,condition,location,locationId:locationId||'',gps:gps||null,photos,notes:String(notes||'').trim(),estimatedRepairCost:condition===GSE_STATUS.OUT?num(estimatedRepairCost):null,employeeId,employeeName:nameOf(user),createdAt:serverTimestamp(),eventType:'INSPECTION'});
   });
 }
-export async function registerGse({code,type,serialNumber='',location,locationId='',user}){const id=getGseCode(code);if(!/^[A-Z0-9_-]{3,60}$/.test(id))throw new Error('Equipment ID must contain 3–60 letters, numbers, underscores or hyphens.');if(!type?.trim()||!location?.trim())throw new Error('Type and location are required.');if(!idOf(user))throw new Error('User identity required.');const ref=doc(db,'gse_equipment',id);await runTransaction(db,async tx=>{if((await tx.get(ref)).exists())throw new Error('Equipment ID already exists.');tx.set(ref,{equipmentCode:id,equipmentType:type.trim(),serialNumber:serialNumber.trim(),location,locationId,status:GSE_STATUS.PENDING,createdBy:idOf(user),createdAt:serverTimestamp(),updatedAt:serverTimestamp(),gpsDeviceId:null});});}
+export async function registerGse({code,type,serialNumber='',location,locationId='',motorized=false,vinNumber='',year='',fuelType='',user}){const id=getGseCode(code);if(!/^[A-Z0-9_-]{3,60}$/.test(id))throw new Error('Equipment ID must contain 3–60 letters, numbers, underscores or hyphens.');if(!type?.trim()||!location?.trim())throw new Error('Type and location are required.');if(!idOf(user))throw new Error('User identity required.');const ref=doc(db,'gse_equipment',id);await runTransaction(db,async tx=>{if((await tx.get(ref)).exists())throw new Error('Equipment ID already exists.');tx.set(ref,{equipmentCode:id,equipmentType:type.trim(),serialNumber:serialNumber.trim(),...assetFields({motorized,vinNumber,year,fuelType}),location,locationId,status:GSE_STATUS.PENDING,createdBy:idOf(user),createdAt:serverTimestamp(),updatedAt:serverTimestamp(),gpsDeviceId:null});});}
 export async function releaseGse({equipment,user,notes,finalRepairCost}){if(!notes?.trim())throw new Error('Release notes are required.');if(!validMoney(finalRepairCost))throw new Error('Enter the actual final repair cost (USD), including 0 for no cost.');if(!idOf(user))throw new Error('User identity required.');const ref=doc(db,'gse_equipment',equipment.id);await runTransaction(db,async tx=>{const snap=await tx.get(ref);if(!snap.exists()||snap.data().status!==GSE_STATUS.OUT)throw new Error('Equipment is not currently Out of Service.');const current=snap.data();const event=doc(collection(db,'gse_inspections'));const repair=doc(collection(db,'gse_repairs'));tx.update(ref,{status:GSE_STATUS.PENDING,releaseAuthorizedBy:idOf(user),releaseNotes:notes.trim(),lastRepairCost:num(finalRepairCost),repairStatus:'COMPLETED_PENDING_INSPECTION',updatedAt:serverTimestamp()});tx.set(repair,{equipmentId:equipment.id,equipmentType:current.equipmentType||'',estimatedCost:num(current.estimatedRepairCost||0),finalCost:num(finalRepairCost),completedAt:serverTimestamp(),authorizedById:idOf(user),authorizedByName:nameOf(user),notes:notes.trim(),eventType:'REPAIR_COMPLETED'});tx.set(event,{equipmentId:equipment.id,eventType:'MANAGEMENT_RELEASE',employeeId:idOf(user),notes:notes.trim(),finalRepairCost:num(finalRepairCost),createdAt:serverTimestamp()});});}
 export async function updateGseGpsDevice({equipment,user,gpsDeviceId='',gpsProvider='',notes=''}){if(!idOf(user))throw new Error('User identity required.');if(String(user.role||'').toLowerCase()!=='station_manager'&&String(user.role||'').toLowerCase()!=='duty_manager')throw new Error('Management access required.');const ref=doc(db,'gse_equipment',equipment.id);await runTransaction(db,async tx=>{const snap=await tx.get(ref);if(!snap.exists())throw new Error('Equipment not found.');const event=doc(collection(db,'gse_inspections'));tx.update(ref,{gpsDeviceId:String(gpsDeviceId).trim()||null,gpsProvider:String(gpsProvider).trim(),gpsDeviceNotes:String(notes).trim(),gpsDeviceUpdatedAt:serverTimestamp(),updatedAt:serverTimestamp()});tx.set(event,{equipmentId:equipment.id,eventType:'GPS_DEVICE_UPDATED',employeeId:idOf(user),gpsDeviceId:String(gpsDeviceId).trim()||null,gpsProvider:String(gpsProvider).trim(),createdAt:serverTimestamp()});});}
+
+// Management-only asset corrections. Archive instead of deleting historical evidence.
+export async function updateGseEquipment({equipment,user,type,serialNumber,location,locationId,motorized=false,vinNumber="",year="",fuelType="",reason}) {
+  if (!['station_manager','duty_manager'].includes(String(user?.role||'').toLowerCase())) throw new Error('Management access required.');
+  if (!idOf(user)) throw new Error('User identity required.');
+  if (!type?.trim() || !location?.trim() || !reason?.trim()) throw new Error('Type, location and edit reason are required.');
+  const ref=doc(db,'gse_equipment',equipment.id);
+  await runTransaction(db,async tx=>{
+    const snap=await tx.get(ref);
+    if (!snap.exists() || snap.data().archived===true) throw new Error('Equipment is not active.');
+    const before=snap.data();
+    const patch={equipmentType:type.trim(),serialNumber:String(serialNumber||'').trim(),...assetFields({motorized,vinNumber,year,fuelType}),location:location.trim(),locationId:locationId||'',updatedAt:serverTimestamp(),lastEditedBy:idOf(user)};
+    const event=doc(collection(db,'gse_inspections'));
+    tx.update(ref,patch);
+    tx.set(event,{equipmentId:equipment.id,eventType:'EQUIPMENT_EDITED',before:{equipmentType:before.equipmentType||'',serialNumber:before.serialNumber||'',motorized:before.motorized??null,vinNumber:before.vinNumber||'',year:before.year??null,fuelType:before.fuelType||'',location:before.location||'',locationId:before.locationId||''},after:{equipmentType:patch.equipmentType,serialNumber:patch.serialNumber,motorized:patch.motorized,vinNumber:patch.vinNumber,year:patch.year,fuelType:patch.fuelType,location:patch.location,locationId:patch.locationId},reason:reason.trim(),employeeId:idOf(user),employeeName:nameOf(user),createdAt:serverTimestamp()});
+  });
+}
+export async function archiveGseEquipment({equipment,user,reason}) {
+  if (String(user?.role||'').toLowerCase()!=='station_manager') throw new Error('Only Station Manager can remove equipment from the active register.');
+  if (!idOf(user)||!reason?.trim()) throw new Error('Identity and removal reason are required.');
+  const ref=doc(db,'gse_equipment',equipment.id);
+  await runTransaction(db,async tx=>{
+    const snap=await tx.get(ref);
+    if (!snap.exists()||snap.data().archived===true) throw new Error('Equipment already removed or not found.');
+    const event=doc(collection(db,'gse_inspections'));
+    tx.update(ref,{archived:true,archivedAt:serverTimestamp(),archivedBy:idOf(user),archiveReason:reason.trim(),updatedAt:serverTimestamp()});
+    tx.set(event,{equipmentId:equipment.id,eventType:'EQUIPMENT_ARCHIVED',reason:reason.trim(),employeeId:idOf(user),employeeName:nameOf(user),createdAt:serverTimestamp()});
+  });
+}
