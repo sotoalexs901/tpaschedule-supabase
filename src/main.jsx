@@ -98,6 +98,11 @@ import GateChecklistManagementPage from "./pages/GateChecklistManagementPage.jsx
 
 import FuelEntryPage from "./pages/FuelEntryPage.jsx";
 import FuelManagementPage from "./pages/FuelManagementPage.jsx";
+import RampOperationsPage from "./pages/RampOperationsPage.jsx";
+import RampManagementPage from "./pages/RampManagementPage.jsx";
+import RampGseInspectionPage from "./pages/RampGseInspectionPage.jsx";
+import RampPreArrivalPage from "./pages/RampPreArrivalPage.jsx";
+import RampLavPage from "./pages/RampLavPage.jsx";
 
 import CierreVuelo from "./pages/CierreVuelo.jsx";
 import CierreVueloManagement from "./pages/CierreVueloManagement.jsx";
@@ -833,6 +838,14 @@ function AppRouter() {
               </ProtectedRoute>
             }
           />
+
+          {/* RAMP OPERATIONS */}
+          <Route path="ramp" element={<ProtectedRoute roles={["agent","supervisor","duty_manager","station_manager"]}><RampOperationsPage /></ProtectedRoute>} />
+          <Route path="ramp/fuel" element={<ProtectedRoute roles={["agent","supervisor","duty_manager","station_manager"]}><FuelEntryPage /></ProtectedRoute>} />
+          <Route path="ramp/pre-arrival" element={<ProtectedRoute roles={["agent","supervisor","duty_manager","station_manager"]}><RampPreArrivalPage /></ProtectedRoute>} />
+          <Route path="ramp/lav" element={<ProtectedRoute roles={["agent","supervisor","duty_manager","station_manager"]}><RampLavPage /></ProtectedRoute>} />
+          <Route path="ramp/gse-inspection" element={<ProtectedRoute roles={["agent","supervisor","duty_manager","station_manager"]}><RampGseInspectionPage /></ProtectedRoute>} />
+          <Route path="ramp/management" element={<ProtectedRoute roles={["supervisor","duty_manager","station_manager"]}><RampManagementPage /></ProtectedRoute>} />
 
           {/* FUEL */}
 
