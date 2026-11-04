@@ -638,6 +638,50 @@ async function alertUnattendedShiftEnd({ assignment, nowKey }) {
   }, { merge: true });
 }
 
+// Manual review assignments are protected from automatic schedule rebalancing.
+export async function assignSmartDutyManager({ assignmentId, dutyManagerUserId, actor } = {}) {
+  if (upper(actor?.role) !== "STATION_MANAGER") throw new Error("Only Station Managers may assign department reviewers.");
+  if (!assignmentId) throw new Error("Assignment is required.");
+  const assignmentRef = doc(db, SMART_ASSIGNMENTS_COLLECTION, assignmentId);
+  const snap = await getDoc(assignmentRef);
+  if (!snap.exists()) throw new Error("Department assignment not found.");
+  const current = snap.data();
+  if (current.dateKey !== tampaDateKey()) throw new Error("Historical assignments cannot be changed.");
+  if (reviewIsComplete(current)) throw new Error("Completed packages cannot be reassigned.");
+  let selected = null;
+  if (dutyManagerUserId) {
+    const userSnap = await getDoc(doc(db, "users", dutyManagerUserId));
+    if (!userSnap.exists() || upper(userSnap.data().role) !== "DUTY_MANAGER") throw new Error("Select a valid Duty Manager.");
+    selected = { id: userSnap.id, ...userSnap.data() };
+  }
+  const oldId = clean(current.assignedDutyManagerId);
+  const newId = selected?.id || "";
+  if (oldId === newId && current.assignmentSource === "manual_station_manager") return;
+  const patch = {
+    assignedDutyManagerId: newId,
+    assignedDutyManagerName: selected ? visibleName(selected) : "",
+    assignedDutyManagerDepartment: selected?.department || "",
+    assignedReviewerRole: selected ? "duty_manager" : "",
+    assignedShiftEndLocal: "",
+    stationManagerFallbackUsed: false,
+    assignmentSource: "manual_station_manager",
+    manuallyAssignedById: actor.id,
+    manuallyAssignedAt: serverTimestamp(),
+    dutyActionTakenAt: null,
+    status: selected ? "ASSIGNED" : "WAITING_FOR_DUTY_MANAGER",
+    updatedAt: serverTimestamp(),
+  };
+  await setDoc(assignmentRef, patch, { merge: true });
+  await setDoc(doc(collection(db, SMART_AUDIT_COLLECTION)), {
+    dateKey: current.dateKey, department: current.department || "",
+    assignmentId, eventType: "MANUAL_DUTY_MANAGER_ASSIGNMENT",
+    previousDutyManagerId: oldId, assignedDutyManagerId: newId,
+    assignedDutyManagerName: patch.assignedDutyManagerName,
+    actorId: actor.id, actorName: visibleName(actor), actorRole: actor.role,
+    createdAt: serverTimestamp(),
+  });
+}
+
 export async function ensureDailySmartAssignments({ actor } = {}) {
   const dateKey = tampaDateKey();
   const [rulesSnap, usersSnap, employeesSnap, schedulesSnap, assignmentsSnap] = await Promise.all([
@@ -732,6 +776,13 @@ export async function ensureDailySmartAssignments({ actor } = {}) {
     if (existing && !(rule.dutySchedule || []).length && !schedules.some((item) => matchesDutySchedule(item, isDeltaRule(rule)))) {
       await setDoc(ref, { ...supervisorPatch, updatedAt: serverTimestamp() }, { merge: true });
       results.push({ id, ...existing, ...supervisorPatch, preserved: true, awaitingScheduleSetup: true });
+      continue;
+    }
+
+    // A manual Station Manager assignment remains authoritative on refresh.
+    if (existing && existing.assignmentSource === "manual_station_manager") {
+      await setDoc(ref, { ...supervisorPatch, updatedAt: serverTimestamp() }, { merge: true });
+      results.push({ id, ...existing, ...supervisorPatch, preserved: true, manualAssignment: true });
       continue;
     }
 
