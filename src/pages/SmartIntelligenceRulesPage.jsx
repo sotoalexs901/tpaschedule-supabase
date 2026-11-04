@@ -26,10 +26,14 @@ const REPORT_CATALOG = [
   { key: "employee_performance", label: "Employee Performance Report" },
   { key: "bso_daily", label: "BSO Daily Report" },
   { key: "fuel_entry", label: "Fuel Entry" },
+  { key: 'ramp_prearrival', label: 'Ramp Pre-Arrival' },
+  { key: 'ramp_lav', label: 'Ramp LAV Services' },
+  { key: 'ramp_gse', label: 'Ramp GSE Safety / C615' },
+  { key: 'ramp_fuel', label: 'Ramp Fuel Control' },
   { key: "cierre_vuelo", label: "Cierre de Vuelo" },
 ];
 
-const DEFAULT_DEPARTMENTS = ["SY", "WL", "AV", "WCHR", "DL Cabin Service", "AA BSO"];
+const DEFAULT_DEPARTMENTS = ["SY", "WL", "AV", "WCHR", "DL Cabin Service", "AA BSO", "AM", "Ramp Operations"];
 
 function clean(value) {
   return String(value || "").trim();
@@ -135,7 +139,8 @@ export default function SmartIntelligenceRulesPage() {
         active: true,
         reviewMode: "GENERAL_POOL",
         dedicatedDutyManagerIds: [],
-        requiredReports: [],
+        requiredReports: department.toUpperCase() === 'RAMP OPERATIONS'
+          ? ['ramp_prearrival','ramp_lav','ramp_gse','ramp_fuel'] : [],
         fallbackToStationManager: false,
         fallbackStationManagerId: "",
         fallbackStationManagerName: "",
