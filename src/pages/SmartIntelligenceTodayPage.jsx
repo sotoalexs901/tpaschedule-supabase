@@ -5,6 +5,7 @@ import { db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 import {
   ensureDailySmartAssignments,
+  assignSmartDutyManager,
   selectResponsibleSupervisor,
   SMART_ASSIGNMENTS_COLLECTION,
   tampaDateKey,
@@ -86,6 +87,8 @@ export default function SmartIntelligenceTodayPage() {
   const [auditRows, setAuditRows] = useState([]);
   const [dutyFilter, setDutyFilter] = useState("");
   const [reviewingId, setReviewingId] = useState("");
+  const [assignmentSavingId, setAssignmentSavingId] = useState("");
+  const [showMineOnly, setShowMineOnly] = useState(false);
 
   const runEngine = async () => {
     if (!isToday) return;
@@ -149,7 +152,7 @@ export default function SmartIntelligenceTodayPage() {
   }, []);
 
   useEffect(() => {
-    if (!isStationManager) return undefined;
+    if (!user?.id || !["station_manager", "duty_manager"].includes(user?.role)) return undefined;
     const unsub = onSnapshot(collection(db, "users"), (snap) => {
       const next = snap.docs
         .map((item) => ({ id: item.id, ...item.data() }))
@@ -158,7 +161,7 @@ export default function SmartIntelligenceTodayPage() {
       setDutyUsers(next);
     });
     return () => unsub();
-  }, [isStationManager]);
+  }, [user?.id, user?.role]);
 
   const dutyDiagnostics = useMemo(() => {
     const now = Date.now();
@@ -293,7 +296,7 @@ export default function SmartIntelligenceTodayPage() {
 
   const assigned = rows.filter((row) => clean(row.assignedDutyManagerId));
   const waiting = rows.filter((row) => !clean(row.assignedDutyManagerId));
-  const myRows = rows.filter((row) => isStationManager || row.assignedDutyManagerId === user?.id)
+  const myRows = rows.filter((row) => !showMineOnly || row.assignedDutyManagerId === user?.id)
     .filter((row) => !dutyFilter || row.assignedDutyManagerId === dutyFilter);
   const visibleAudit = auditRows.filter((row) => isStationManager || row.actorId === user?.id || row.assignedDutyManagerId === user?.id)
     .filter((row) => !dutyFilter || row.actorId === dutyFilter || row.assignedDutyManagerId === dutyFilter);
@@ -401,8 +404,9 @@ export default function SmartIntelligenceTodayPage() {
 
       <Card>
         <h2 style={{ margin: "0 0 12px", fontSize: 19 }}>Daily Review Assignments</h2>
+        {!isStationManager && <label style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12, fontSize: 13 }}><input type="checkbox" checked={showMineOnly} onChange={(e) => setShowMineOnly(e.target.checked)}/> My assignments only</label>}
         {myRows.length === 0 ? (
-          <div style={{ color: "#64748b", padding: "14px 0" }}>{user?.role === "duty_manager" ? "No departments are assigned to you today." : "No Smart Intelligence assignments have been created yet."}</div>
+          <div style={{ color: "#64748b", padding: "14px 0" }}>{user?.role === "duty_manager" ? "No departments match this filter." : "No Smart Intelligence assignments have been created yet."}</div>
         ) : (
           <div style={{ display: "grid", gap: 12 }}>
             {myRows.map((row) => {
