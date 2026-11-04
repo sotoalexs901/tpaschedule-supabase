@@ -177,6 +177,7 @@ function normalizeAccount(value) {
 
   // WCHR
   if (raw.includes("WCHR") || raw.includes("WHEELCHAIR")) return "WCHR";
+  if (raw.includes('RAMP')) return 'RAMP OPERATIONS';
 
   return raw;
 }
@@ -514,6 +515,56 @@ function scheduledDutyIds(rule, now = new Date()) {
   }).map((slot) => clean(slot.dutyManagerId)))];
 }
 
+// Baseline supplied by Station Management: week of Nov 2-8, 2026.
+// Repeat by weekday; a newly approved schedule takes precedence for its own week.
+const GENERAL_DUTY_WEEK = {
+  adonis: { tue: true, wed: true, thu: true, fri: true, sat: true },
+  juan: { sun: true, mon: true, tue: true, fri: true, sat: true },
+  geyber: { sun: true, mon: true, thu: true, fri: true, sat: true },
+};
+function dutyIdentity(user) {
+  const name = upper([user?.displayName, user?.fullName, user?.name, user?.username].filter(Boolean).join(' '));
+  if (name.includes('ADONIS')) return 'adonis';
+  if (name.includes('JUAN') && name.includes('FONTES')) return 'juan';
+  if (name.includes('GEYBER')) return 'geyber';
+  if (name.includes('HECTOR') || name.includes('HÉCTOR')) return 'hector';
+  if (name.includes('MELANY')) return 'melany';
+  return '';
+}
+function generalDutyForDate(users, dateKey) {
+  const day = DAY_KEYS[new Date(`${dateKey}T12:00:00Z`).getUTCDay()];
+  return users.filter(user => GENERAL_DUTY_WEEK[dutyIdentity(user)]?.[day]).map(user => user.id);
+}
+// A weekly rule is evaluated by calendar day, not by the time the browser was opened.
+function calendarRuleDutyIds(rule, dateKey) {
+  const day = DAY_KEYS[new Date(`${dateKey}T12:00:00Z`).getUTCDay()];
+  return [...new Set((rule.dutySchedule || []).filter(slot => slot.day === day &&
+    shiftMinute(slot.start) !== null && shiftMinute(slot.end) !== null &&
+    shiftMinute(slot.start) !== shiftMinute(slot.end) && clean(slot.dutyManagerId))
+    .map(slot => clean(slot.dutyManagerId)))];
+}
+// 60-day roster: create once; existing entries can be manually edited and are not overwritten.
+export const SMART_DUTY_ROSTER_COLLECTION = 'smart_intelligence_duty_roster';
+export async function ensureSmartDutyRoster({ users, startDateKey = tampaDateKey(), days = 60, actor } = {}) {
+  if (upper(actor?.role) !== 'STATION_MANAGER') return { created: 0 };
+  const managers = (users || []).filter(u => upper(u.role) === 'DUTY_MANAGER');
+  let created = 0;
+  for (let offset = 0; offset < Math.min(days, 60); offset++) {
+    const d = new Date(`${startDateKey}T12:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + offset);
+    const key = d.toISOString().slice(0, 10);
+    const ref = doc(db, SMART_DUTY_ROSTER_COLLECTION, `${key}__general`);
+    const existing = await getDoc(ref);
+    if (existing.exists()) continue;
+    const ids = generalDutyForDate(managers, key);
+    await setDoc(ref, { dateKey: key, pool: 'GENERAL', dutyManagerIds: ids,
+      shifts: ids.map(id => ({ userId: id, start: '07:00', end: '16:30' })),
+      source: 'station_week_2026_11_02_repeating', createdAt: serverTimestamp(),
+      createdById: actor?.id || '' });
+    created++;
+  }
+  return { created };
+}
 // Approved AeroStation schedules are the primary source of Duty coverage.
 // General operations: Eulen Management Dutys Managers.
 // Delta: Cabin Service. A name-only match is intentionally avoided unless unique.
@@ -542,32 +593,15 @@ function userForDutyScheduleRow(row, employees, users) {
 }
 function approvedScheduleDutyIds({ rule, schedules, employees, users, now = new Date() }) {
   const delta = isDeltaRule(rule);
-  const { day, previousDay, minute } = tampaShiftContext(now);
-  const result = new Set();
-  const matches = schedules.filter((schedule) => matchesDutySchedule(schedule, delta) && scheduleCoversToday(schedule, now));
-  // Include previous-day schedules for shifts crossing midnight.
-  const yesterday = new Date(now.getTime() - 86400000);
-  const previousSchedules = schedules.filter((schedule) => matchesDutySchedule(schedule, delta) && scheduleCoversToday(schedule, yesterday));
-  for (const schedule of [...new Map([...matches, ...previousSchedules].map((item) => [item.id, item])).values()]) {
-    for (const row of Array.isArray(schedule.grid) ? schedule.grid : []) {
-      const user = userForDutyScheduleRow(row, employees, users);
-      if (!user) continue;
-      const todayShifts = Array.isArray(row[day]) ? row[day] : [];
-      const previousShifts = Array.isArray(row[previousDay]) ? row[previousDay] : [];
-      const covers = todayShifts.some((shift) => {
-        const start = shiftMinute(shift.start), end = shiftMinute(shift.end);
-        if (start === null || end === null || start === end) return false;
-        return end > start ? minute >= start && minute < end : minute >= start;
-      }) || previousShifts.some((shift) => {
-        const start = shiftMinute(shift.start), end = shiftMinute(shift.end);
-        return start !== null && end !== null && end < start && minute < end;
-      });
-      if (covers) result.add(user.id);
-    }
+  const day = tampaDayKey(now);
+  const matches = schedules.filter(schedule => matchesDutySchedule(schedule, delta) && scheduleCoversToday(schedule, now));
+  const ids = new Set();
+  for (const schedule of matches) for (const row of Array.isArray(schedule.grid) ? schedule.grid : []) {
+    const user = userForDutyScheduleRow(row, employees, users);
+    if (user && (Array.isArray(row[day]) ? row[day] : []).some(shiftIsWorking)) ids.add(user.id);
   }
-  return { ids: [...result], source: delta ? "approved_cabin_service_schedule" : "approved_eulen_management_dutys_managers", scheduleIds: matches.map((item) => item.id) };
+  return { ids: [...ids], source: delta ? 'approved_cabin_service_schedule' : 'approved_eulen_management_dutys_managers', scheduleIds: matches.map(s => s.id) };
 }
-
 
 // Local Tampa wall-clock key. Used for shift-end comparisons across midnight.
 function tampaWallKey(date = new Date()) {
@@ -653,6 +687,8 @@ export async function assignSmartDutyManager({ assignmentId, dutyManagerUserId, 
     const userSnap = await getDoc(doc(db, "users", dutyManagerUserId));
     if (!userSnap.exists() || upper(userSnap.data().role) !== "DUTY_MANAGER") throw new Error("Select a valid Duty Manager.");
     selected = { id: userSnap.id, ...userSnap.data() };
+    if (normalizeAccount(current.department) === 'DL CABIN SERVICE' && !['hector', 'melany'].includes(dutyIdentity(selected)))
+      throw new Error('DL Cabin Service is restricted to Hector and Melany.');
   }
   const oldId = clean(current.assignedDutyManagerId);
   const newId = selected?.id || "";
@@ -709,7 +745,7 @@ export async function ensureDailySmartAssignments({ actor } = {}) {
 
   const allDutyManagers = allUsers.filter((user) => upper(user.role) === "DUTY_MANAGER");
   const activeDutyManagers = allDutyManagers
-    .filter((user) => isDutyManagerFresh(user))
+    .filter((user) => generalDutyForDate(allDutyManagers, dateKey).includes(user.id))
     .sort((a, b) => visibleName(a).localeCompare(visibleName(b)) || a.id.localeCompare(b.id));
 
   const dedicatedIds = new Set(
@@ -717,7 +753,7 @@ export async function ensureDailySmartAssignments({ actor } = {}) {
       rule.reviewMode === "DEDICATED" ? rule.dedicatedDutyManagerIds : []
     )
   );
-  const generalPool = allDutyManagers.filter((user) => !dedicatedIds.has(user.id));
+  const generalPool = allDutyManagers.filter((user) => ['adonis', 'juan', 'geyber'].includes(dutyIdentity(user)));
 
   // Count only locked/completed packages first. Open auto-assigned packages are
   // recalculated deterministically so the active workload stays balanced.
@@ -730,6 +766,9 @@ export async function ensureDailySmartAssignments({ actor } = {}) {
     }
   }
 
+  // Existing roster entries (including manual edits) override the repeating baseline.
+  const rosterSnap = await getDoc(doc(db, SMART_DUTY_ROSTER_COLLECTION, `${dateKey}__general`));
+  const rosterIds = rosterSnap.exists() ? (rosterSnap.data().dutyManagerIds || []) : generalDutyForDate(allDutyManagers, dateKey);
   const results = [];
 
   for (const rule of rules) {
@@ -773,7 +812,7 @@ export async function ensureDailySmartAssignments({ actor } = {}) {
 
     // Migration safety: do not erase today's assignments before the Station Manager
     // has configured a weekly schedule for this department.
-    if (existing && !(rule.dutySchedule || []).length && !schedules.some((item) => matchesDutySchedule(item, isDeltaRule(rule)))) {
+    if (existing && isDeltaRule(rule) && !(rule.dutySchedule || []).length && !schedules.some((item) => matchesDutySchedule(item, true))) {
       await setDoc(ref, { ...supervisorPatch, updatedAt: serverTimestamp() }, { merge: true });
       results.push({ id, ...existing, ...supervisorPatch, preserved: true, awaitingScheduleSetup: true });
       continue;
@@ -787,7 +826,8 @@ export async function ensureDailySmartAssignments({ actor } = {}) {
     }
 
     // Closed/review-complete packages are audit-locked and never rebalanced.
-    if (existing && clean(existing.assignedDutyManagerId) && reviewIsComplete(existing)) {
+    if (existing && clean(existing.assignedDutyManagerId) && (reviewIsComplete(existing) ||
+        existing.dutyActionTakenAt || Object.keys(existing.reportReviews || {}).length)) {
       await setDoc(ref, { ...supervisorPatch, updatedAt: serverTimestamp() }, { merge: true });
       results.push({ id, ...existing, ...supervisorPatch, preserved: true, balanceLocked: true });
       continue;
@@ -799,15 +839,17 @@ export async function ensureDailySmartAssignments({ actor } = {}) {
     // when no matching approved schedule exists for this account.
     const scheduledIds = approvedCoverage.scheduleIds.length
       ? approvedCoverage.ids
-      : scheduledDutyIds(rule);
-    const pool = allDutyManagers.filter((candidate) =>
-      scheduledIds.includes(candidate.id) &&
-      (rule.reviewMode !== "DEDICATED" || rule.dedicatedDutyManagerIds.includes(candidate.id))
-    );
+      : isDeltaRule(rule) ? calendarRuleDutyIds(rule, dateKey) :
+        (rule.dutySchedule || []).length ? calendarRuleDutyIds(rule, dateKey) : rosterIds;
+    const pool = allDutyManagers.filter((candidate) => {
+      if (!scheduledIds.includes(candidate.id)) return false;
+      if (isDeltaRule(rule)) return ['hector', 'melany'].includes(dutyIdentity(candidate)) && rule.dedicatedDutyManagerIds.includes(candidate.id);
+      return generalPool.some(dm => dm.id === candidate.id);
+    });
 
     const selectedDutyManager = chooseLeastLoaded(pool, loadByUserId);
     const fallbackStationManager =
-      !selectedDutyManager && rule.fallbackToStationManager
+      !selectedDutyManager && rule.fallbackToStationManager && !isDeltaRule(rule)
         ? (
             allUsers.find((candidate) => candidate.id === rule.fallbackStationManagerId && upper(candidate.role) === "STATION_MANAGER") ||
             allUsers.find((candidate) => upper(candidate.role) === "STATION_MANAGER" && visibleName(candidate) === rule.fallbackStationManagerName) ||
@@ -816,7 +858,8 @@ export async function ensureDailySmartAssignments({ actor } = {}) {
         : null;
 
     const selected = selectedDutyManager || fallbackStationManager;
-    const selectedShiftEndLocal = selectedDutyManager ? shiftEndForUser({ userId: selectedDutyManager.id, rule, schedules, employees, users: allUsers }) : "";
+    const selectedShiftEndLocal = selectedDutyManager ? (shiftEndForUser({ userId: selectedDutyManager.id, rule, schedules, employees, users: allUsers }) ||
+      (!isDeltaRule(rule) ? `${dateKey}T16:30` : '')) : '';
     const isStationManagerFallback = Boolean(fallbackStationManager && !selectedDutyManager);
     const previousAssigneeId = clean(existing?.assignedDutyManagerId);
     const previousAssigneeName = clean(existing?.assignedDutyManagerName);
@@ -890,7 +933,10 @@ export async function ensureDailySmartAssignments({ actor } = {}) {
     results.push({ id, ...payload, preserved: !assigneeChanged && Boolean(existing) });
   }
 
+  // Generate future roster after today's assignments; never replace manual edits.
+  const rosterResult = await ensureSmartDutyRoster({ users: allDutyManagers, startDateKey: dateKey, actor });
   return {
+    rosterCreated: rosterResult.created,
     dateKey,
     rulesCount: rules.length,
     activeDutyManagers,
