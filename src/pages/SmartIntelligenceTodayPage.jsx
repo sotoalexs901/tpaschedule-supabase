@@ -63,6 +63,8 @@ const REPORT_MANAGEMENT_ROUTES = {
   bso_daily: "/bso-daily-management",
   fuel_entry: "/fuel-management",
   cierre_vuelo: "/cierre-vuelo-management",
+  ramp_prearrival: '/ramp-management', ramp_lav: '/ramp-management',
+  ramp_gse: '/ramp-management', ramp_fuel: '/ramp-management',
 };
 
 export default function SmartIntelligenceTodayPage() {
@@ -88,6 +90,7 @@ export default function SmartIntelligenceTodayPage() {
   const [dutyFilter, setDutyFilter] = useState("");
   const [reviewingId, setReviewingId] = useState("");
   const [assignmentSavingId, setAssignmentSavingId] = useState("");
+  const [assignmentChoice, setAssignmentChoice] = useState({});
   const [showMineOnly, setShowMineOnly] = useState(false);
 
   const runEngine = async () => {
@@ -241,6 +244,16 @@ export default function SmartIntelligenceTodayPage() {
     navigate(`${path}?reportId=${encodeURIComponent(report.bestReportId)}&sourceCollection=${encodeURIComponent(report.sourceCollection || "")}`, {
       state: { smartIntelligenceReturnDate: dateKey, smartIntelligenceAssignmentId: row.id, reportId: report.bestReportId },
     });
+  };
+
+  const handleAssignDuty = async (row) => {
+    const dutyManagerUserId = assignmentChoice[row.id] ?? row.assignedDutyManagerId ?? '';
+    try {
+      setAssignmentSavingId(row.id);
+      await assignSmartDutyManager({ assignmentId: row.id, dutyManagerUserId, actor: user });
+      setMessage(`${row.department}: assignment updated.`);
+    } catch (error) { setMessage(error?.message || 'Assignment failed.'); }
+    finally { setAssignmentSavingId(''); }
   };
 
   const handleReviewReport = async (row, report) => {
@@ -439,6 +452,20 @@ export default function SmartIntelligenceTodayPage() {
 
                   <div style={{ marginTop: 12, display: "grid", gap: 7, fontSize: 13 }}>
                     <div><strong>Duty Manager:</strong> {row.assignedDutyManagerName || "No Duty Manager scheduled for this department"}</div>
+                    {isStationManager && isToday && row.packageReviewStatus !== 'COMPLETED' && (
+                      <div style={{display:'flex', gap:8, flexWrap:'wrap', alignItems:'center'}}>
+                        <select aria-label={`Assign Duty Manager for ${row.department}`}
+                          value={assignmentChoice[row.id] ?? row.assignedDutyManagerId ?? ''}
+                          onChange={e => setAssignmentChoice(old => ({...old, [row.id]: e.target.value}))}>
+                          <option value="">Unassigned</option>
+                          {dutyUsers.filter(dm => row.department?.toUpperCase().includes('DL CABIN')
+                            ? /hector|héctor|melany/i.test(dm.displayName || dm.fullName || dm.name || '')
+                            : /adonis|juan.*fontes|geyber/i.test(dm.displayName || dm.fullName || dm.name || '')).map(dm =>
+                              <option key={dm.id} value={dm.id}>{dm.displayName || dm.fullName || dm.name || dm.username}</option>)}
+                        </select>
+                        <button type="button" disabled={assignmentSavingId === row.id} onClick={() => handleAssignDuty(row)}>Save Duty Manager</button>
+                      </div>
+                    )}
                     <div><strong>Responsible Supervisor:</strong> {row.responsibleSupervisorName || "Select one of the Supervisors on Duty below"}</div>
 
                     {canSelectSupervisor && (
