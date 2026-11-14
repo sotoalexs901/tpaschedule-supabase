@@ -646,6 +646,7 @@ export default function EditUsersPage() {
       const employee = userRecord.__matchedEmployee;
       const haystack = [
         userRecord.username,
+        userRecord.email,
         userRecord.role,
         getVisibleUserName(userRecord),
         employee ? getVisibleEmployeeName(employee) : "",
@@ -676,7 +677,13 @@ export default function EditUsersPage() {
         (employee) => employee.id === userRecord.employeeId
       );
 
+      const normalizedEmail = normalizeLower(userRecord.email);
+      if (normalizedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+        setStatus("Enter a valid email address.");
+        return;
+      }
       const payload = {
+        email: normalizedEmail,
         username: normalizeText(userRecord.username),
         pin: normalizeText(userRecord.pin),
         role: userRecord.role || "agent",
@@ -1166,6 +1173,14 @@ export default function EditUsersPage() {
                             </option>
                           ))}
                         </SelectInput>
+                      </td>
+
+                      <td style={tdStyle}>
+                        <TextInput type="email" aria-label="Employee email"
+                          value={userRecord.email || ""}
+                          placeholder="Employee email"
+                          onChange={(e) => handleChange(userRecord.id, "email", e.target.value)}
+                          style={{ fontSize: 13 }} />
                       </td>
 
                       <td style={tdStyle}>
