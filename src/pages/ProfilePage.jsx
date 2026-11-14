@@ -242,7 +242,7 @@ export default function ProfilePage() {
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
-  const [verifiedLoginEmail, setVerifiedLoginEmail] = useState(false);
+  const [emailLocked, setEmailLocked] = useState(false);
   const [position, setPosition] = useState("");
   const [birthdayMonth, setBirthdayMonth] = useState("");
   const [birthdayDay, setBirthdayDay] = useState("");
@@ -302,7 +302,7 @@ export default function ProfilePage() {
 
           setUsername(data.username || data.loginUsername || user.username || "");
           setEmail(data.email || "");
-          setVerifiedLoginEmail(Boolean(data.authUid));
+          setEmailLocked(Boolean(String(data.email || "").trim()));
           setDisplayName(
             data.displayName ||
               data.fullName ||
@@ -333,6 +333,7 @@ export default function ProfilePage() {
         } else {
           setUsername(user.username || "");
           setEmail(user.email || "");
+          setEmailLocked(Boolean(String(user.email || "").trim()));
           setDisplayName(user.displayName || "");
           setPosition(user.position || getDefaultPosition(user.role));
 
@@ -423,8 +424,8 @@ export default function ProfilePage() {
     }
 
     const normalizedEmail = email.trim().toLowerCase();
-    if (verifiedLoginEmail && normalizedEmail !== String(user.email || "").trim().toLowerCase()) {
-      setError("Your sign-in email is protected. A verification code sent to your previous email is required before changing it.");
+    if (emailLocked && normalizedEmail !== String(user.email || "").trim().toLowerCase()) {
+      setError("To change your saved email address, please contact your Station Manager.");
       return;
     }
     if (normalizedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
@@ -536,6 +537,7 @@ export default function ProfilePage() {
         );
       }
 
+      if (normalizedEmail) setEmailLocked(true);
       setStoredPhotoURL(finalPhotoURL);
       setPhotoFile(null);
 
@@ -986,10 +988,10 @@ export default function ProfilePage() {
 
             <div>
               <FieldLabel>Email Address</FieldLabel>
-              <TextInput type="email" value={email} onChange={(e) => setEmail(e.target.value)} readOnly={verifiedLoginEmail}
+              <TextInput type="email" value={email} onChange={(e) => setEmail(e.target.value)} readOnly={emailLocked} onClick={() => { if (emailLocked) window.alert("To change your email address, please contact your Station Manager."); }}
                 placeholder="employee@example.com" autoComplete="email" />
               <p style={{ fontSize: 11, color: "#64748b", marginTop: 6 }}>
-                This email is shared with Manage Users. Accounts linked to Firebase require old-email verification before changing their sign-in address.
+                This email is shared with Manage Users. Once saved, your email can only be changed by your Station Manager.
               </p>
             </div>
 
