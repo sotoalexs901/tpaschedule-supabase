@@ -2,7 +2,6 @@
 // It never trusts the user ID or role sent by the browser.
 // Enable only after the station's identity/session migration is complete.
 const admin = require("firebase-admin");
-const crypto = require("node:crypto");
 function response(code, body) {
   return { statusCode: code, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" }, body: JSON.stringify(body) };
 }
@@ -48,11 +47,22 @@ exports.handler = async (event) => {
     const user = await identity(event);
     if (!user) return response(401, { error: "Verified employee sign-in required." });
     const db = admin.firestore();
+    if (Buffer.byteLength(event.body || "", "utf8") > 16384) return response(413, { error: "Request too large." });
     const body = JSON.parse(event.body || "{}");
     const action = text(body.action, 40);
     if (action === "list") {
       const snap = await db.collection("operationalChats").where("memberIds", "array-contains", user.uid).limit(100).get();
       return response(200, { chats: snap.docs.filter(d => roleAllowed(user.role, d.data())).map(d => ({ id: d.id, name: d.data().name, audience: d.data().audience, memberIds: d.data().memberIds })) });
+    }
+    if (action === "employees") {
+      if (!["station_manager", "duty_manager", "supervisor"].includes(user.role)) return response(403, { error: "Not authorized." });
+      const snap = await db.collection("users").limit(500).get();
+      const employees = snap.docs.filter(d => d.id !== user.uid && d.data()?.status !== "inactive").map(d => ({
+        id: d.id,
+        name: text(d.data()?.displayName || d.data()?.fullName || d.data()?.name || d.data()?.username || "Employee", 100),
+        role: text(d.data()?.role, 60),
+      }));
+      return response(200, { employees });
     }
     if (action === "create") {
       if (!["station_manager", "duty_manager", "supervisor"].includes(user.role)) return response(403, { error: "Not authorized to create chats." });
@@ -60,10 +70,13 @@ exports.handler = async (event) => {
       const audience = text(body.audience, 20) || "invited";
       if (!name || !["invited", "supervisors", "dutys"].includes(audience)) return response(400, { error: "Invalid chat." });
       if (audience === "dutys" && !["station_manager", "duty_manager"].includes(user.role)) return response(403, { error: "Not authorized." });
-      const invitees = [...new Set((Array.isArray(body.inviteeIds) ? body.inviteeIds : []).map(x => text(x, 128)))].filter(Boolean).slice(0, 40);
+      const rawInvitees = Array.isArray(body.inviteeIds) ? body.inviteeIds : [];
+      if (rawInvitees.length > 40) return response(400, { error: "Too many invitees." });
+      const invitees = [...new Set(rawInvitees.map(x => text(x, 128)))].filter(Boolean);
       const docs = await Promise.all(invitees.map(id => db.collection("users").doc(id).get()));
       if (docs.some(d => !d.exists || d.data()?.status === "inactive")) return response(400, { error: "Unknown or inactive employee." });
       if (docs.some(d => !roleAllowed(text(d.data().role, 60), { audience }))) return response(400, { error: "Invitee role is not permitted in this chat." });
+      if (invitees.length === 0) return response(400, { error: "Select at least one employee." });
       const ref = db.collection("operationalChats").doc();
       const now = admin.firestore.FieldValue.serverTimestamp();
       await ref.set({ name, audience, ownerId: user.uid, memberIds: [user.uid], invitedIds: invitees.filter(id => id !== user.uid), createdAt: now, updatedAt: now });
