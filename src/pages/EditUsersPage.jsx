@@ -6,7 +6,7 @@ import {
   deleteDoc,
   doc,
 } from "firebase/firestore";
-import { db } from "../firebase";
+import { auth, db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 import { APP_NAME } from "../config/appConfig.js";
 
@@ -470,6 +470,8 @@ function MobileUserCard({
             onChange={(e) => onChange(userRecord.id, "email", e.target.value)} />
         </div>
 
+        {user?.role === "station_manager" && <ActionButton variant="soft" disabled={savingId === userRecord.id}
+          onClick={() => sendEmailInvitation(userRecord)}>Send Email Invitation</ActionButton>}
         <div>
           <div style={mobileLabelStyle}>Username</div>
           <TextInput
@@ -675,6 +677,37 @@ export default function EditUsersPage() {
 
   const unlinkedCount = enrichedUsers.length - linkedCount;
 
+  const sendEmailInvitation = async (record) => {
+    if (user?.role !== "station_manager") {
+      setStatus("Only the Station Manager can send invitations.");
+      return;
+    }
+    const email = normalizeLower(record.email);
+    if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) {
+      setStatus("Enter a valid employee email first.");
+      return;
+    }
+    if (!window.confirm(`Send an account activation invitation to ${email}?`)) return;
+    const current = auth.currentUser;
+    if (!current) {
+      setStatus("For security, sign in using your verified Firebase email account before sending invitations.");
+      return;
+    }
+    try {
+      setSavingId(record.id);
+      const token = await current.getIdToken();
+      const response = await fetch("/.netlify/functions/employee-email-invite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ action: "send", userId: record.id, email })
+      });
+      const data = await response.json();
+      if (!response.ok) throw Error(data.error || "Invitation failed");
+      setStatus(`Invitation sent to ${email}. The existing profile remains unchanged until activation.`);
+    } catch (err) { setStatus(err.message || "Could not send invitation."); }
+    finally { setSavingId(null); }
+  };
+
   const updateUser = async (userRecord) => {
     try {
       setSavingId(userRecord.id);
@@ -687,6 +720,10 @@ export default function EditUsersPage() {
       const normalizedEmail = normalizeLower(userRecord.email);
       if (user?.role !== "station_manager") {
         setStatus("Only the Station Manager can update employee email addresses.");
+        return;
+      }
+      if (normalizedEmail !== normalizeLower(userRecord.__originalEmail)) {
+        setStatus("Email changes must use Send Invitation. The current email stays active until the employee completes activation.");
         return;
       }
       if (userRecord.authUid && normalizedEmail !== normalizeLower(userRecord.__originalEmail)) {
@@ -1269,6 +1306,10 @@ export default function EditUsersPage() {
                       </td>
 
                       <td style={{ ...tdStyle, textAlign: "center" }}>
+                        {user?.role === "station_manager" && <div style={{ marginBottom: 8 }}>
+                          <ActionButton variant="soft" disabled={savingId === userRecord.id}
+                            onClick={() => sendEmailInvitation(userRecord)}>Send Invitation</ActionButton>
+                        </div>}
                         <ActionButton
                           onClick={() => updateUser(userRecord)}
                           disabled={savingId === userRecord.id}
