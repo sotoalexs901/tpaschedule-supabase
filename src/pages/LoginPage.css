@@ -905,3 +905,19 @@
   .login-birthday-characters { gap: 12px; }
   .birthday-cake { font-size: 37px; }
 }
+
+/* Seasonal login palettes; these do not change application authentication. */
+.login-celebration-christmas {
+  background: linear-gradient(125deg, #f0fdf4 0%, #dcfce7 45%, #fef2f2 100%);
+  border-color: #86efac;
+  color: #14532d;
+}
+.login-celebration-christmas .login-birthday-confetti,
+.login-celebration-christmas .login-birthday-thanks { color: #166534; }
+.login-celebration-newyear {
+  background: linear-gradient(125deg, #172554 0%, #312e81 55%, #1e3a8a 100%);
+  border-color: #a5b4fc;
+  color: #fff;
+}
+.login-celebration-newyear .login-birthday-confetti { color: #fde68a; }
+.login-celebration-newyear .login-birthday-thanks { color: #e0e7ff; }
