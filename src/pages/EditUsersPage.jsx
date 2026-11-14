@@ -685,9 +685,12 @@ export default function EditUsersPage() {
       );
 
       const normalizedEmail = normalizeLower(userRecord.email);
-      const savedRecord = users.find((entry) => entry.id === userRecord.id);
-      if (userRecord.authUid && normalizedEmail !== normalizeLower(savedRecord?.__originalEmail ?? userRecord.__originalEmail ?? userRecord.email)) {
-        setStatus("This account uses Firebase sign-in. Email changes require verification through the old email.");
+      if (user?.role !== "station_manager") {
+        setStatus("Only the Station Manager can update employee email addresses.");
+        return;
+      }
+      if (userRecord.authUid && normalizedEmail !== normalizeLower(userRecord.__originalEmail)) {
+        setStatus("This user has Firebase sign-in enabled. Their authentication email must be updated securely before changing this record.");
         return;
       }
       if (normalizedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
