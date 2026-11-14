@@ -18,6 +18,7 @@ import EventRsvpSummary from "../components/EventRsvpSummary.jsx";
 import LiveFlightsPanel from "../components/LiveFlightsPanel.jsx";
 import AirportWeatherPanel from "../components/AirportWeatherPanel.jsx";
 import WeeklyScheduleGallery from "../components/WeeklyScheduleGallery.jsx";
+import OperationalChatPanel from "../components/OperationalChatPanel.jsx";
 
 const FIXED_AUTHOR = "AeroStation Hub";
 
@@ -1238,6 +1239,7 @@ export default function DashboardPage() {
             minWidth: 0,
           }}
         >
+          <OperationalChatPanel compact />
           <WeeklyScheduleGallery />
 
           <GlassCard
