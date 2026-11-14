@@ -872,3 +872,52 @@
     text-align: center;
   }
 }
+
+
+/* First-anniversary celebration: visual only; never covers login controls. */
+.login-birthday {
+  position: relative;
+  overflow: hidden;
+  text-align: center;
+  margin: 0 0 22px;
+  padding: 15px 12px 17px;
+  border-radius: 20px;
+  background: linear-gradient(125deg, #fff8df 0%, #fce7f3 48%, #e0f2fe 100%);
+  border: 1px solid #fbd38d;
+  color: #713f12;
+}
+.login-birthday-confetti { color: #be185d; font-size: 15px; letter-spacing: 8px; }
+.login-birthday-characters { display: flex; justify-content: center; align-items: center; gap: 18px; margin: 3px 0; }
+.birthday-dancer { display: inline-block; font-size: 31px; animation: birthday-dance 2s ease-in-out infinite; }
+.birthday-dancer-right { animation-delay: .45s; }
+.birthday-cake { display: inline-block; font-size: 43px; animation: birthday-bounce 2.4s ease-in-out infinite; }
+.login-birthday-heading { font-weight: 900; font-size: 21px; letter-spacing: -.02em; }
+.login-birthday-copy { font-size: 13px; font-weight: 800; margin: 4px 0; }
+.login-birthday-thanks { font-size: 11px; line-height: 1.45; margin: 4px 0 0; color: #713f12; }
+@keyframes birthday-dance { 0%, 100% { transform: rotate(-9deg) translateY(0); } 50% { transform: rotate(9deg) translateY(-5px); } }
+@keyframes birthday-bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+@media (prefers-reduced-motion: reduce) {
+  .birthday-dancer, .birthday-cake { animation: none; }
+}
+@media (max-width: 520px) {
+  .login-birthday { padding: 11px 10px; margin-bottom: 15px; }
+  .login-birthday-heading { font-size: 19px; }
+  .login-birthday-characters { gap: 12px; }
+  .birthday-cake { font-size: 37px; }
+}
+
+/* Seasonal login palettes; these do not change application authentication. */
+.login-celebration-christmas {
+  background: linear-gradient(125deg, #f0fdf4 0%, #dcfce7 45%, #fef2f2 100%);
+  border-color: #86efac;
+  color: #14532d;
+}
+.login-celebration-christmas .login-birthday-confetti,
+.login-celebration-christmas .login-birthday-thanks { color: #166534; }
+.login-celebration-newyear {
+  background: linear-gradient(125deg, #172554 0%, #312e81 55%, #1e3a8a 100%);
+  border-color: #a5b4fc;
+  color: #fff;
+}
+.login-celebration-newyear .login-birthday-confetti { color: #fde68a; }
+.login-celebration-newyear .login-birthday-thanks { color: #e0e7ff; }
