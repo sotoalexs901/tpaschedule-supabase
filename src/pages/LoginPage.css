@@ -921,3 +921,19 @@
 }
 .login-celebration-newyear .login-birthday-confetti { color: #fde68a; }
 .login-celebration-newyear .login-birthday-thanks { color: #e0e7ff; }
+
+
+/* Decorations surround the original app icon, without replacing its artwork. */
+.login-logo-seasonal-frame { position: relative; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+.login-logo-seasonal-frame .login-brand-icon { position: relative; z-index: 1; }
+.login-logo-seasonal-decor { position: absolute; inset: -15px; pointer-events: none; z-index: 2; }
+.login-logo-seasonal-decor span { position: absolute; display: block; font-size: 21px; line-height: 1; filter: drop-shadow(0 2px 3px rgba(0,0,0,.12)); animation: logo-float 2.5s ease-in-out infinite; }
+.login-logo-decor-top { top: -4px; left: 50%; transform: translateX(-50%); }
+.login-logo-decor-left { left: -11px; bottom: 0; animation-delay: .3s !important; }
+.login-logo-decor-right { right: -12px; bottom: 0; animation-delay: .6s !important; }
+.login-logo-birthday .login-brand-icon { box-shadow: 0 0 0 3px #fbbf24, 0 8px 22px rgba(245,158,11,.22); }
+.login-logo-christmas .login-brand-icon { box-shadow: 0 0 0 3px #22c55e, 0 8px 22px rgba(34,197,94,.22); }
+.login-logo-newyear .login-brand-icon { box-shadow: 0 0 0 3px #818cf8, 0 8px 22px rgba(99,102,241,.22); }
+@keyframes logo-float { 0%,100% { translate: 0 0; } 50% { translate: 0 -5px; } }
+@media (prefers-reduced-motion: reduce) { .login-logo-seasonal-decor span { animation: none; } }
+@media (max-width: 520px) { .login-logo-seasonal-decor span { font-size: 17px; } .login-logo-seasonal-decor { inset: -12px; } }

@@ -368,7 +368,15 @@ export default function LoginPage() {
 
           <div className="login-brand">
 
-            <div className="login-brand-icon">
+            <div className={`login-logo-seasonal-frame${celebration ? ` login-logo-${celebration.kind}` : ""}`}>
+              {celebration && (
+                <div className="login-logo-seasonal-decor" aria-hidden="true">
+                  <span className="login-logo-decor-top">{celebration.kind === "birthday" ? "🎈" : celebration.kind === "christmas" ? "❄️" : "✨"}</span>
+                  <span className="login-logo-decor-left">{celebration.kind === "birthday" ? "🎉" : celebration.kind === "christmas" ? "🎄" : "🎆"}</span>
+                  <span className="login-logo-decor-right">{celebration.kind === "birthday" ? "🥳" : celebration.kind === "christmas" ? "🎁" : "🥂"}</span>
+                </div>
+              )}
+              <div className="login-brand-icon">
               <img
                 src="/icons/aerostation-icon.png"
                 alt={APP_NAME}
@@ -379,6 +387,8 @@ export default function LoginPage() {
                   display: "block",
                 }}
               />
+            </div>
+
             </div>
 
             <div className="login-brand-text">
