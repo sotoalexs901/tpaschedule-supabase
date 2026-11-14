@@ -12,7 +12,7 @@ import {
   where,
 } from "firebase/firestore";
 import { auth, db } from "../firebase";
-import { signInWithEmailAndPassword, signOut } from "firebase/auth";
+import { sendPasswordResetEmail, signInWithEmailAndPassword, signOut } from "firebase/auth";
 import { useUser } from "../UserContext.jsx";
 import {
   APP_NAME,
@@ -110,6 +110,7 @@ export default function LoginPage() {
   const [pin, setPin] = useState("");
   const [emailPassword, setEmailPassword] = useState("");
   const [emailPilotMode, setEmailPilotMode] = useState(false);
+  const [emailHelp, setEmailHelp] = useState("");
   const pilotEnabled = import.meta.env.VITE_EMAIL_LOGIN_ENABLED === "true";
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -129,6 +130,7 @@ export default function LoginPage() {
     e.preventDefault();
     if (loading) return;
     setError("");
+    setEmailHelp("");
     try {
       setLoading(true);
       const credential = await signInWithEmailAndPassword(auth, username.trim().toLowerCase(), emailPassword);
@@ -145,6 +147,24 @@ export default function LoginPage() {
       setError(err?.message || "Email sign-in failed.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleEmailPasswordReset = async () => {
+    const email = username.trim().toLowerCase();
+    if (!email || !email.includes("@")) {
+      setError("Enter your email address first.");
+      return;
+    }
+    setError("");
+    setEmailHelp("");
+    try {
+      await sendPasswordResetEmail(auth, email);
+      setEmailHelp("If this account is enabled, a password reset email will arrive shortly.");
+    } catch (err) {
+      // Do not disclose whether an employee email exists.
+      console.warn("Password reset request could not be completed", err?.code);
+      setEmailHelp("If this account is enabled, a password reset email will arrive shortly.");
     }
   };
 
@@ -506,6 +526,15 @@ export default function LoginPage() {
                 <input id="email-password" type="password" value={emailPassword}
                   onChange={(e) => setEmailPassword(e.target.value)}
                   autoComplete="current-password" disabled={loading} />
+              </div>
+            )}
+
+            {pilotEnabled && emailPilotMode && (
+              <div style={{ marginBottom: 12 }}>
+                <button type="button" onClick={handleEmailPasswordReset} disabled={loading}>
+                  Forgot password?
+                </button>
+                {emailHelp && <p role="status">{emailHelp}</p>}
               </div>
             )}
 
