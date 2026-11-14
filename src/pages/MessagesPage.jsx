@@ -744,17 +744,21 @@ export default function MessagesPage() {
         )
       );
 
-      const batch = writeBatch(db);
+      // Firestore batches have a write limit. Delete in bounded chunks so
+      // long operational conversations can be removed without failing.
+      const messageDocs = messagesSnap.docs;
+      for (let offset = 0; offset < messageDocs.length; offset += 400) {
+        const batch = writeBatch(db);
+        messageDocs.slice(offset, offset + 400).forEach((m) => {
+          batch.delete(m.ref);
+        });
+        await batch.commit();
+      }
 
-      messagesSnap.docs.forEach((m) => {
-        batch.delete(m.ref);
-      });
-
-      batch.delete(
+      // Delete the parent only after every message batch succeeds.
+      await deleteDoc(
         doc(db, "conversations", selectedConversationId)
       );
-
-      await batch.commit();
 
       setMessages([]);
       setSelectedUserId("");
