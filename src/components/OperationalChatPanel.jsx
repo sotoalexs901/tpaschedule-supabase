@@ -1,4 +1,5 @@
 import React, { useMemo, useRef, useState } from "react";
+import LiveOperationalChat from "./LiveOperationalChat.jsx";
 import { useNavigate } from "react-router-dom";
 import { useUser } from "../UserContext.jsx";
 
@@ -20,6 +21,11 @@ const btn = { border: "1px solid #dbe5f0", borderRadius: 10, background: "#f8faf
 const field = { border: "1px solid #cbd5e1", borderRadius: 10, padding: 10, minWidth: 0, width: "100%" };
 const managementRoles = ["station_manager", "duty_manager", "supervisor"];
 export default function OperationalChatPanel({ compact = false }) {
+  if (import.meta.env.VITE_OPERATIONAL_CHAT_LIVE === "true") return <LiveOperationalChat />;
+  return <OperationalChatPreview compact={compact} />;
+}
+
+function OperationalChatPreview({ compact = false }) {
   const { user } = useUser();
   const navigate = useNavigate();
   const role = user?.role || "agent";
