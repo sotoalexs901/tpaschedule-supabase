@@ -260,3 +260,14 @@
     max-width: 100%;
   }
 }
+
+/* WCHR dispatch: stack map and selected-agent detail on narrow devices. */
+@media screen and (max-width: 760px) {
+  .wchr-dispatch-map-layout {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  .wchr-dispatch-map-layout > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+}
