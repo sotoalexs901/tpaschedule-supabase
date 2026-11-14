@@ -12,7 +12,9 @@ export default function LiveOperationalChat() {
   const [messages, setMessages] = useState([]);
   const [draft, setDraft] = useState("");
   const [name, setName] = useState("");
-  const [invitees, setInvitees] = useState("");
+  const [invitees, setInvitees] = useState([]);
+  const [employees, setEmployees] = useState([]);
+  const [employeeSearch, setEmployeeSearch] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState(null);
@@ -39,6 +41,7 @@ export default function LiveOperationalChat() {
     finally { setBusy(false); }
   }
   const canCreate = ["station_manager", "duty_manager", "supervisor"].includes(user?.role);
+  useEffect(() => { if (!creating || !canCreate) return; request("employees").then(r => setEmployees(r.employees || [])).catch(e => setError(e.message)); }, [creating, canCreate]);
   return <section style={{ padding: 16, border: "1px solid #dbe5f0", borderRadius: 16, background: "#fff" }}>
     <h2 style={{ marginTop: 0 }}>💬 Operational Chat</h2>
     {error && <p role="alert" style={{ background: "#fef2f2", color: "#991b1b", padding: 10, borderRadius: 8 }}>{error}</p>}
@@ -77,11 +80,18 @@ export default function LiveOperationalChat() {
         </div>)}
       </div>}
       {canCreate && <button style={{ ...button, margin: "12px 0" }} onClick={() => setCreating(!creating)}>＋ Create private chat</button>}
-      {creating && <form onSubmit={e => { e.preventDefault(); run("create", { name, audience, inviteeIds: invitees.split(",").map(x => x.trim()).filter(Boolean) }, async () => { setName(""); setInvitees(""); setCreating(false); await refresh(); }); }} style={{ display: "grid", gap: 8, marginBottom: 12 }}>
+      {creating && <form onSubmit={e => { e.preventDefault(); run("create", { name, audience, inviteeIds: invitees }, async () => { setName(""); setInvitees([]); setCreating(false); await refresh(); }); }} style={{ display: "grid", gap: 8, marginBottom: 12 }}>
         <input style={input} placeholder="Chat name" value={name} maxLength={80} onChange={e => setName(e.target.value)} required/>
         <select style={input} value={audience} onChange={e => setAudience(e.target.value)}><option value="invited">Invited employees only</option><option value="supervisors">Supervisors & management</option>{["station_manager", "duty_manager"].includes(user?.role) && <option value="dutys">Duty Managers only</option>}</select>
-        <input style={input} placeholder="Employee IDs separated by commas" value={invitees} onChange={e => setInvitees(e.target.value)}/>
-        <button style={button} disabled={busy}>Create & invite</button>
+        <input style={input} placeholder="Search employees by name" value={employeeSearch} onChange={e => setEmployeeSearch(e.target.value)}/>
+        <div style={{ maxHeight: 190, overflowY: "auto", display: "grid", gap: 6 }}>
+          {employees.filter(e => e.name.toLowerCase().includes(employeeSearch.toLowerCase()) && (audience === "invited" || (audience === "supervisors" ? ["supervisor", "duty_manager", "station_manager"].includes(e.role) : ["duty_manager", "station_manager"].includes(e.role)))).map(e => <label key={e.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
+            <input type="checkbox" checked={invitees.includes(e.id)} onChange={event => setInvitees(old => event.target.checked ? [...old, e.id] : old.filter(id => id !== e.id))}/>
+            {e.name} · {e.role}
+          </label>)}
+        </div>
+        <small>{invitees.length} employees selected</small>
+        <button style={button} disabled={busy || !invitees.length}>Create & invite</button>
       </form>}
       <div style={{ display: "grid", gap: 8 }}>{chats.map(c => <button key={c.id} style={{ ...button, textAlign: "left" }} onClick={() => setActive(c)}>🔒 {c.name} ›</button>)}</div>
       {!chats.length && <p style={{ color: "#64748b" }}>No conversations yet.</p>}
