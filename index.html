@@ -54,6 +54,38 @@
       href="/icons/apple-touch-icon.png"
     />
 
+    <!-- Seasonal PWA artwork is selected when the page is opened or installed.
+         iPadOS may cache already-installed home-screen icons. -->
+    <script>
+      (function () {
+        const date = new Intl.DateTimeFormat("en-CA", {
+          timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit"
+        }).format(new Date());
+        const season = date < "2026-12-01" ? "birthday"
+          : date < "2026-12-26" ? "christmas"
+          : date < "2027-02-16" ? "newyear" : "";
+        if (!season) return;
+        const prefix = "/icons/seasonal/" + season;
+        const apple = document.querySelector('link[rel="apple-touch-icon"]');
+        if (apple) apple.href = prefix + "-180.png";
+        const manifest = document.querySelector('link[rel="manifest"]');
+        if (manifest) {
+          const seasonalManifest = {
+            name: "AeroStation Hub", short_name: "AeroStation",
+            description: "AeroStation Hub - Operational Management Platform",
+            id: "/", start_url: "/?source=pwa", scope: "/",
+            display: "standalone", orientation: "any",
+            background_color: "#0b1120", theme_color: "#0b1120",
+            icons: [
+              { src: prefix + "-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+              { src: prefix + "-512.png", sizes: "512x512", type: "image/png", purpose: "any" }
+            ]
+          };
+          manifest.href = URL.createObjectURL(new Blob([JSON.stringify(seasonalManifest)], {type: "application/manifest+json"}));
+        }
+      })();
+    </script>
+
     <!-- Avoid automatic phone-number styling inside operational data -->
     <meta
       name="format-detection"
