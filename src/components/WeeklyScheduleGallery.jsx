@@ -52,8 +52,13 @@ export default function WeeklyScheduleGallery() {
   }, [schedules]);
 
   useEffect(() => { setIndex(0); }, [gallery.length]);
-  const current = gallery[Math.min(index, gallery.length - 1)];
-  const move = delta => setIndex(i => (i + delta + gallery.length) % gallery.length);
+  // Visual examples appear only on Netlify deploy-preview hosts, never on production.
+  const previewMode = typeof window !== "undefined" && /^deploy-preview-\\d+--/.test(window.location.hostname);
+  const exampleDepartments = ["Ramp Operations", "WCHR", "AA BSO", "DL Cabin Service", "World Atlantic", "Sun Country", "Avianca"];
+  const demo = previewMode && !loading && !error && gallery.length === 0;
+  const total = demo ? exampleDepartments.length : gallery.length;
+  const current = demo ? { department: exampleDepartments[index % total], week: "2026-11-16", demo: true } : gallery[Math.min(index, gallery.length - 1)];
+  const move = delta => setIndex(i => (i + delta + total) % total);
 
   return (
     <section id="weekly-schedules" aria-label="Weekly Department Schedules" style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 18, padding: 14, minWidth: 0 }}>
@@ -63,10 +68,11 @@ export default function WeeklyScheduleGallery() {
         !current ? <p style={{ color: "#64748b", fontSize: 13 }}>No approved weekly schedule photos have been published yet. Your personal schedule remains available in My Schedule.</p> :
         <>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
-            <strong>{current.department}</strong><span style={{ color: "#64748b", fontSize: 12 }}>Week: {current.week} · {index + 1} of {gallery.length}</span>
+            <strong>{current.department}</strong><span style={{ color: "#64748b", fontSize: 12 }}>Week: {current.week} · {index + 1} of {total}</span>
           </div>
+          {demo && <p style={{ background: "#fef3c7", padding: 10, borderRadius: 8, fontSize: 12 }}>EXAMPLE ONLY — November 16–22, 2026. No real approved roster is displayed.</p>}
           <button type="button" onClick={() => move(1)} aria-label="View next department schedule" title="Tap to see the next department" style={{ width: "100%", padding: 0, border: 0, background: "transparent", cursor: "pointer" }}>
-            <img src={current.url} alt={`Approved weekly schedule for ${current.department}, week ${current.week}`} style={{ width: "100%", maxHeight: 480, objectFit: "contain", borderRadius: 10, border: "1px solid #e2e8f0" }} />
+            {demo ? <div style={{ minHeight: 210, padding: 18, background: "#f8fafc", border: "1px solid #cbd5e1", borderRadius: 10, textAlign: "center" }}><strong>{current.department}</strong><p>November 16–22, 2026</p><p>Sample schedule photo placeholder</p><small>Tap to view next department</small></div> : <img src={current.url} alt={`Approved weekly schedule for ${current.department}, week ${current.week}`} style={{ width: "100%", maxHeight: 480, objectFit: "contain", borderRadius: 10, border: "1px solid #e2e8f0" }} />}
           </button>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
             <button type="button" onClick={() => move(-1)}>Previous</button>
@@ -75,7 +81,7 @@ export default function WeeklyScheduleGallery() {
           </div>
           {expanded && <div role="dialog" aria-modal="true" aria-label={`Expanded schedule: ${current.department}`} style={{ position: "fixed", inset: 0, zIndex: 10000, background: "rgba(0,0,0,.9)", padding: 12, overflow: "auto" }}>
             <button type="button" onClick={() => setExpanded(false)} style={{ position: "sticky", top: 0, zIndex: 1, padding: 12 }}>Close</button>
-            <img src={current.url} alt={`Full schedule for ${current.department}`} style={{ display: "block", maxWidth: "none", width: "max(100%, 900px)", height: "auto", margin: "12px auto" }} />
+            {demo ? <p style={{ color: "#fff", textAlign: "center" }}>Example only — {current.department} · November 16–22, 2026</p> : <img src={current.url} alt={`Full schedule for ${current.department}`} style={{ display: "block", maxWidth: "none", width: "max(100%, 900px)", height: "auto", margin: "12px auto" }} />}
           </div>}
         </>}
     </section>
