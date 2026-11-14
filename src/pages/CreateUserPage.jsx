@@ -1,5 +1,6 @@
 // src/pages/CreateUserPage.jsx
 import React, { useEffect, useMemo, useState } from "react";
+import EmployeeInvitationReview from "../components/EmployeeInvitationReview.jsx";
 import {
   addDoc,
   collection,
@@ -707,6 +708,8 @@ export default function CreateUserPage() {
           </div>
         </div>
       </div>
+
+      <EmployeeInvitationReview />
 
       {message && (
         <PageCard style={{ padding: 16 }}>
