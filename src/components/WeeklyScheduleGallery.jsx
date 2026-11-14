@@ -53,9 +53,9 @@ export default function WeeklyScheduleGallery() {
 
   useEffect(() => { setIndex(0); }, [gallery.length]);
   // Visual examples appear only on Netlify deploy-preview hosts, never on production.
-  const previewMode = typeof window !== "undefined" && /^deploy-preview-\\d+--/.test(window.location.hostname);
+  const previewMode = typeof window !== "undefined" && /^deploy-preview-\d+--/.test(window.location.hostname);
   const exampleDepartments = ["Ramp Operations", "WCHR", "AA BSO", "DL Cabin Service", "World Atlantic", "Sun Country", "Avianca"];
-  const demo = previewMode && !loading && !error && gallery.length === 0;
+  const demo = previewMode && !loading && gallery.length === 0;
   const total = demo ? exampleDepartments.length : gallery.length;
   const current = demo ? { department: exampleDepartments[index % total], week: "2026-11-16", demo: true } : gallery[Math.min(index, gallery.length - 1)];
   const move = delta => setIndex(i => (i + delta + total) % total);
@@ -64,7 +64,7 @@ export default function WeeklyScheduleGallery() {
     <section id="weekly-schedules" aria-label="Weekly Department Schedules" style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 18, padding: 14, minWidth: 0 }}>
       <h2 style={{ margin: "0 0 6px", fontSize: 18, color: "#0f172a" }}>Weekly Department Schedules</h2>
       {loading ? <p role="status">Loading approved schedules...</p> :
-        error ? <p role="alert">{error}</p> :
+        error && !demo ? <p role="alert">{error}</p> :
         !current ? <p style={{ color: "#64748b", fontSize: 13 }}>No approved weekly schedule photos have been published yet. Your personal schedule remains available in My Schedule.</p> :
         <>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
