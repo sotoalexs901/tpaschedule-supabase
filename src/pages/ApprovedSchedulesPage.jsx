@@ -1850,7 +1850,7 @@ export default function ApprovedSchedulesPage() {
                     display:
                       "grid",
                     gridTemplateColumns:
-                      "repeat(auto-fit, minmax(280px, 1fr))",
+                      "repeat(auto-fit, minmax(min(100%, 280px), 1fr))",
                     gap: 14,
                   }}
                 >
