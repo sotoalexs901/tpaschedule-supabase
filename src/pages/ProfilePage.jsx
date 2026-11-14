@@ -241,6 +241,7 @@ export default function ProfilePage() {
 
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
+  const [email, setEmail] = useState("");
   const [position, setPosition] = useState("");
   const [birthdayMonth, setBirthdayMonth] = useState("");
   const [birthdayDay, setBirthdayDay] = useState("");
@@ -299,6 +300,7 @@ export default function ProfilePage() {
           const data = snap.data();
 
           setUsername(data.username || data.loginUsername || user.username || "");
+          setEmail(data.email || "");
           setDisplayName(
             data.displayName ||
               data.fullName ||
@@ -328,6 +330,7 @@ export default function ProfilePage() {
           setStoredPhotoURL(data.profilePhotoURL || "");
         } else {
           setUsername(user.username || "");
+          setEmail(user.email || "");
           setDisplayName(user.displayName || "");
           setPosition(user.position || getDefaultPosition(user.role));
 
@@ -417,6 +420,12 @@ export default function ProfilePage() {
       return;
     }
 
+    const normalizedEmail = email.trim().toLowerCase();
+    if (normalizedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      setError("Enter a valid email address.");
+      return;
+    }
+
     if (!displayName.trim()) {
       setError("Display name is required.");
       return;
@@ -485,6 +494,7 @@ export default function ProfilePage() {
       const normalizedPin = pin.trim();
 
       const payload = {
+        email: normalizedEmail,
         pin: normalizedPin,
         profilePhotoURL: finalPhotoURL,
         displayName: normalizedDisplayName,
@@ -534,6 +544,7 @@ export default function ProfilePage() {
           prev
             ? {
                 ...prev,
+                email: normalizedEmail,
                 pin: normalizedPin,
                 profilePhotoURL: finalPhotoURL,
                 displayName: normalizedDisplayName,
@@ -964,6 +975,15 @@ export default function ProfilePage() {
               >
                 Username is managed by administration and cannot be
                 changed here.
+              </p>
+            </div>
+
+            <div>
+              <FieldLabel>Email Address</FieldLabel>
+              <TextInput type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+                placeholder="employee@example.com" autoComplete="email" />
+              <p style={{ fontSize: 11, color: "#64748b", marginTop: 6 }}>
+                This email is shared with Manage Users. Changing it does not automatically change your Firebase sign-in email.
               </p>
             </div>
 
