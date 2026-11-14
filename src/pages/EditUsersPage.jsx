@@ -465,6 +465,12 @@ function MobileUserCard({
         </div>
 
         <div>
+          <div style={mobileLabelStyle}>Email Address</div>
+          <TextInput type="email" value={userRecord.email || ""} placeholder="Employee email"
+            onChange={(e) => onChange(userRecord.id, "email", e.target.value)} />
+        </div>
+
+        <div>
           <div style={mobileLabelStyle}>Username</div>
           <TextInput
             value={userRecord.username || ""}
@@ -1132,6 +1138,7 @@ export default function EditUsersPage() {
                 <tr style={{ background: "#f8fbff" }}>
                   <th style={thStyle({ minWidth: 240 })}>Employee Profile</th>
                   <th style={thStyle({ minWidth: 230 })}>Link Profile</th>
+                  <th style={thStyle({ minWidth: 220 })}>Email</th>
                   <th style={thStyle({ minWidth: 210 })}>Username</th>
                   <th style={thStyle({ minWidth: 150 })}>PIN</th>
                   <th style={thStyle({ minWidth: 170 })}>Role</th>
