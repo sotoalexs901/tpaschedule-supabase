@@ -200,6 +200,29 @@ exports.handler = async function handler(event) {
     getAdminApp();
 
     const db = admin.firestore();
+    // Never distribute a schedule that has not been approved.
+    // Validate server-side: the client-provided schedule IDs are untrusted.
+    if (!scheduleIds.length) {
+      return json(400, {
+        ok: false,
+        error: "Select at least one approved schedule before notifying employees.",
+      });
+    }
+
+    const scheduleSnapshots = await Promise.all(
+      scheduleIds.map((id) => db.collection("schedules").doc(id).get())
+    );
+    const invalidScheduleIds = scheduleIds.filter((id, index) => {
+      const snap = scheduleSnapshots[index];
+      return !snap.exists || clean(snap.data()?.status).toLowerCase() !== "approved";
+    });
+    if (invalidScheduleIds.length) {
+      return json(409, {
+        ok: false,
+        error: "One or more selected schedules are no longer approved. Refresh and try again.",
+      });
+    }
+
     const deliveryCollection =
       db.collection("schedule_notification_deliveries");
 
