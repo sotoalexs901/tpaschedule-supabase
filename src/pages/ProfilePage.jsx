@@ -242,6 +242,7 @@ export default function ProfilePage() {
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
+  const [verifiedLoginEmail, setVerifiedLoginEmail] = useState(false);
   const [position, setPosition] = useState("");
   const [birthdayMonth, setBirthdayMonth] = useState("");
   const [birthdayDay, setBirthdayDay] = useState("");
@@ -301,6 +302,7 @@ export default function ProfilePage() {
 
           setUsername(data.username || data.loginUsername || user.username || "");
           setEmail(data.email || "");
+          setVerifiedLoginEmail(Boolean(data.authUid));
           setDisplayName(
             data.displayName ||
               data.fullName ||
@@ -421,6 +423,10 @@ export default function ProfilePage() {
     }
 
     const normalizedEmail = email.trim().toLowerCase();
+    if (verifiedLoginEmail && normalizedEmail !== String(user.email || "").trim().toLowerCase()) {
+      setError("Your sign-in email is protected. A verification code sent to your previous email is required before changing it.");
+      return;
+    }
     if (normalizedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
       setError("Enter a valid email address.");
       return;
@@ -980,10 +986,10 @@ export default function ProfilePage() {
 
             <div>
               <FieldLabel>Email Address</FieldLabel>
-              <TextInput type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+              <TextInput type="email" value={email} onChange={(e) => setEmail(e.target.value)} readOnly={verifiedLoginEmail}
                 placeholder="employee@example.com" autoComplete="email" />
               <p style={{ fontSize: 11, color: "#64748b", marginTop: 6 }}>
-                This email is shared with Manage Users. Changing it does not automatically change your Firebase sign-in email.
+                This email is shared with Manage Users. Accounts linked to Firebase require old-email verification before changing their sign-in address.
               </p>
             </div>
 
