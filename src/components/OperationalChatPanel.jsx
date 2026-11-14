@@ -39,6 +39,7 @@ export default function OperationalChatPanel({ compact = false }) {
   const [draft, setDraft] = useState("");
   const [items, setItems] = useState({});
   const [editing, setEditing] = useState(null);
+  const [selectedMessageId, setSelectedMessageId] = useState(null);
   const [file, setFile] = useState(null);
   const fileRef = useRef(null);
   const [touchStart, setTouchStart] = useState(null);
@@ -114,21 +115,21 @@ export default function OperationalChatPanel({ compact = false }) {
         onTouchEnd={e => { if (touchStart === null) return; const dy = e.changedTouches[0]?.clientY - touchStart; if (Math.abs(dy) > 110) move(dy < 0 ? 1 : -1); setTouchStart(null); }}
         style={{ background: "#f8fafc", borderRadius: 12, padding: 12, minHeight: 155, display: "grid", alignContent: "start", gap: 10 }}>
         {messages.length === 0 && <p style={{ fontSize: 12, color: "#64748b" }}>No preview messages. Write below to test this chat.</p>}
-        {messages.map(m => <div key={m.id} style={{ background: "#dbeafe", padding: 10, borderRadius: 12, maxWidth: "95%", overflowWrap: "anywhere" }}>
+        {messages.map(m => <div key={m.id} onClick={() => setSelectedMessageId(old => old === m.id ? null : m.id)} role="button" tabIndex={0} onKeyDown={e => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); setSelectedMessageId(old => old === m.id ? null : m.id); } }} aria-expanded={selectedMessageId === m.id} aria-label="Message: tap to show reactions and actions" style={{ background: "#dbeafe", padding: 10, borderRadius: 12, maxWidth: "95%", overflowWrap: "anywhere", cursor: "pointer" }}>
           {m.deleted ? <em>Message deleted (audit placeholder)</em> : <>
             {editing?.id === m.id ? <form onSubmit={e => { e.preventDefault(); modify(m.id, old => ({ ...old, text: editing.text.slice(0, 3000), edited: true })); setEditing(null); }}><input style={field} value={editing.text} onChange={e => setEditing({ ...editing, text: e.target.value })}/><button style={btn}>Save</button><button type="button" style={btn} onClick={() => setEditing(null)}>Cancel</button></form> : <div>{m.text}{m.edited && <small> (edited)</small>}</div>}
             {m.photo && <div><img src={m.photo.url} alt={m.photo.name} style={{ maxWidth: "100%", maxHeight: 200, borderRadius: 8 }}/><small>{m.photo.name}</small></div>}
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 6 }}>
+            {m.reactions.length > 0 && <div style={{ fontSize: 12, marginTop: 5 }}>{m.reactions.join(" ")}</div>}
+            {selectedMessageId === m.id && <div onClick={e => e.stopPropagation()} style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 6 }}>
               {["👍", "❤️", "✅", "⚠️"].map(emoji => <button key={emoji} style={btn} onClick={() => modify(m.id, old => ({ ...old, reactions: old.reactions.includes(emoji) ? old.reactions.filter(x => x !== emoji) : [...old.reactions, emoji] }))}>{emoji}{m.reactions.includes(emoji) ? " 1" : ""}</button>)}
-              <button style={btn} onClick={() => setEditing({ id: m.id, text: m.text })}>Edit</button><button style={btn} onClick={() => deleteMessage(m.id)}>Delete</button>
-            </div>
+              <button style={btn} onClick={() => setEditing({ id: m.id, text: m.text })}>Edit</button><button style={btn} onClick={() => { deleteMessage(m.id); setSelectedMessageId(null); }}>Delete</button>
+            </div>}
           </>}
         </div>)}
       </div>
       <form onSubmit={send} style={{ display: "grid", gap: 8, marginTop: 10 }}>
         <div style={{ display: "flex", gap: 8 }}><input style={field} value={draft} onChange={e => setDraft(e.target.value)} placeholder="Write a sample message..." /><button style={btn} disabled={!draft.trim() && !file}>Send</button></div>
-        <label style={{ fontSize: 12 }}>📷 Attach photo (local preview only, max 5 MB)
-          <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" onChange={e => { const f = e.target.files?.[0]; if (f && f.size > 5 * 1024 * 1024) { e.target.value = ""; setFile(null); return; } setFile(f || null); }}/></label>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}><button type="button" style={{ ...btn, fontSize: 22, lineHeight: 1, fontWeight: 700 }} title="Attach photo" aria-label="Attach photo" onClick={() => fileRef.current?.click()}>＋</button><input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" aria-label="Choose photo" style={{ display: "none" }} onChange={e => { const f = e.target.files?.[0]; if (f && f.size > 5 * 1024 * 1024) { e.target.value = ""; setFile(null); return; } setFile(f || null); }}/><small style={{ color: "#64748b" }}>{file ? file.name : "Add photo"}</small></div>
         {file && <small>{file.name}</small>}
       </form>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 10 }}><button style={btn} onClick={() => move(-1)}>↑ Previous chat</button><button style={btn} onClick={() => move(1)}>↓ Next chat</button></div>
