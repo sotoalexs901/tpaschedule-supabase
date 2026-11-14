@@ -62,8 +62,37 @@ function normalizeSupervisorPosition(value) {
   return String(value || "").trim();
 }
 
+// Seasonal artwork follows Tampa station dates (America/New_York).
+// Boundaries are inclusive at midnight on the starting date and exclusive
+// at midnight on the ending date. No banner is shown from Feb 16, 2027.
+function getLoginCelebration(now = new Date()) {
+  const day = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit",
+  }).format(now);
+  if (day < "2026-12-01") return {
+    kind: "birthday", iconLeft: "🥳", iconMain: "🎂", iconRight: "🎉",
+    title: "We're turning ONE! 🎈",
+    subtitle: "Happy 1st Birthday, AeroStation Hub!",
+    note: "One year of smarter operations. Thank you to our amazing team!",
+  };
+  if (day < "2026-12-26") return {
+    kind: "christmas", iconLeft: "🎅", iconMain: "🎄", iconRight: "⛄",
+    title: "Merry Christmas! ✨",
+    subtitle: "Season's Greetings from AeroStation Hub",
+    note: "Wishing our entire team a joyful and safe holiday season!",
+  };
+  if (day < "2027-02-16") return {
+    kind: "newyear", iconLeft: "🥳", iconMain: "🎆", iconRight: "🎉",
+    title: "Happy New Year 2027! ✨",
+    subtitle: "A new year of teamwork and smarter operations",
+    note: "Thank you for keeping our station moving. Here's to a great 2027!",
+  };
+  return null;
+}
+
 export default function LoginPage() {
   const navigate = useNavigate();
+  const celebration = getLoginCelebration();
   const location = useLocation();
   const { user, setUser } = useUser();
 
@@ -323,17 +352,19 @@ export default function LoginPage() {
       <div className="login-right">
         <div className="login-card">
 
-          <section className="login-birthday" aria-label="Celebrating AeroStation Hub's first anniversary">
-            <div className="login-birthday-confetti" aria-hidden="true">✦ · ✨ · ✦ · ✨ · ✦</div>
-            <div className="login-birthday-characters" aria-hidden="true">
-              <span className="birthday-dancer birthday-dancer-left">🥳</span>
-              <span className="birthday-cake">🎂</span>
-              <span className="birthday-dancer birthday-dancer-right">🎉</span>
-            </div>
-            <div className="login-birthday-heading">We're turning ONE! 🎈</div>
-            <p className="login-birthday-copy">Happy 1st Birthday, AeroStation Hub!</p>
-            <p className="login-birthday-thanks">One year of smarter operations. Thank you to our amazing team!</p>
-          </section>
+          {celebration && (
+            <section className={`login-birthday login-celebration-${celebration.kind}`} aria-label={celebration.subtitle}>
+              <div className="login-birthday-confetti" aria-hidden="true">✦ · ✨ · ✦ · ✨ · ✦</div>
+              <div className="login-birthday-characters" aria-hidden="true">
+                <span className="birthday-dancer birthday-dancer-left">{celebration.iconLeft}</span>
+                <span className="birthday-cake">{celebration.iconMain}</span>
+                <span className="birthday-dancer birthday-dancer-right">{celebration.iconRight}</span>
+              </div>
+              <div className="login-birthday-heading">{celebration.title}</div>
+              <p className="login-birthday-copy">{celebration.subtitle}</p>
+              <p className="login-birthday-thanks">{celebration.note}</p>
+            </section>
+          )}
 
           <div className="login-brand">
 
