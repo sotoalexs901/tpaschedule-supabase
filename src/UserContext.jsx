@@ -251,6 +251,14 @@ export function UserProvider({ children }) {
 
   return (
     <UserContext.Provider value={value}>
+      {!sessionChecking && user && !String(user.email || "").trim() && (
+        <div role="status" style={{ padding: "12px 18px", background: "#fffbeb", color: "#78350f", borderBottom: "1px solid #fbbf24", fontSize: 14, lineHeight: 1.5 }}>
+          <strong>Important: Upcoming Login Change.</strong>{" "}
+          AeroStation Hub will soon require an email address and password. Please{" "}
+          <a href="/profile" style={{ color: "#92400e", fontWeight: 800, textDecoration: "underline" }}>edit My Profile and add your email address</a>.
+          Your current PIN remains available during the transition.
+        </div>
+      )}
       {!sessionChecking && children}
 
       {!sessionChecking && user && showSessionWarning && (

@@ -17,6 +17,8 @@ import OperationalAlertsPanel from "../components/OperationalAlertsPanel.jsx";
 import EventRsvpSummary from "../components/EventRsvpSummary.jsx";
 import LiveFlightsPanel from "../components/LiveFlightsPanel.jsx";
 import AirportWeatherPanel from "../components/AirportWeatherPanel.jsx";
+import WeeklyScheduleGallery from "../components/WeeklyScheduleGallery.jsx";
+import OperationalChatPanel from "../components/OperationalChatPanel.jsx";
 
 const FIXED_AUTHOR = "AeroStation Hub";
 
@@ -1237,6 +1239,9 @@ export default function DashboardPage() {
             minWidth: 0,
           }}
         >
+          <OperationalChatPanel compact />
+          <WeeklyScheduleGallery />
+
           <GlassCard
             title="Station Manager Message"
             icon={"\u{1F4E2}"}

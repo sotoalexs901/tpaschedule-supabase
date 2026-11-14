@@ -241,6 +241,7 @@ export default function ProfilePage() {
 
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
+  const [email, setEmail] = useState("");
   const [position, setPosition] = useState("");
   const [birthdayMonth, setBirthdayMonth] = useState("");
   const [birthdayDay, setBirthdayDay] = useState("");
@@ -299,6 +300,7 @@ export default function ProfilePage() {
           const data = snap.data();
 
           setUsername(data.username || data.loginUsername || user.username || "");
+          setEmail(data.email || "");
           setDisplayName(
             data.displayName ||
               data.fullName ||
@@ -328,6 +330,7 @@ export default function ProfilePage() {
           setStoredPhotoURL(data.profilePhotoURL || "");
         } else {
           setUsername(user.username || "");
+          setEmail(user.email || "");
           setDisplayName(user.displayName || "");
           setPosition(user.position || getDefaultPosition(user.role));
 
@@ -427,6 +430,12 @@ export default function ProfilePage() {
       return;
     }
 
+    const normalizedEmail = email.trim().toLowerCase();
+    if (normalizedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      setError("Please enter a valid email address.");
+      return;
+    }
+
     const hasBirthdayMonth = Boolean(birthdayMonth);
     const hasBirthdayDay = Boolean(birthdayDay);
 
@@ -486,6 +495,7 @@ export default function ProfilePage() {
 
       const payload = {
         pin: normalizedPin,
+        email: normalizedEmail,
         profilePhotoURL: finalPhotoURL,
         displayName: normalizedDisplayName,
         position: normalizedPosition,
@@ -530,20 +540,17 @@ export default function ProfilePage() {
       setPhotoPreviewURL("");
 
       if (typeof setUser === "function") {
-        setUser((prev) =>
-          prev
-            ? {
-                ...prev,
-                pin: normalizedPin,
-                profilePhotoURL: finalPhotoURL,
-                displayName: normalizedDisplayName,
-                position: normalizedPosition,
-                birthDate: "",
-                birthdayMonth: normalizedBirthdayMonth,
-                birthdayDay: normalizedBirthdayDay,
-              }
-            : prev
-        );
+        setUser({
+          ...user,
+          pin: normalizedPin,
+          email: normalizedEmail,
+          profilePhotoURL: finalPhotoURL,
+          displayName: normalizedDisplayName,
+          position: normalizedPosition,
+          birthDate: "",
+          birthdayMonth: normalizedBirthdayMonth,
+          birthdayDay: normalizedBirthdayDay,
+        });
       }
 
       setMessage(
@@ -703,6 +710,14 @@ export default function ProfilePage() {
           </div>
         </div>
       </div>
+
+      <PageCard style={{ padding: isMobile ? 14 : 20, border: "1px solid #fbbf24", background: "#fffbeb" }} isMobile={isMobile}>
+        <div style={{ fontWeight: 800, color: "#92400e", marginBottom: 6 }}>Important: Upcoming Login Change</div>
+        <p style={{ fontSize: 13, color: "#78350f", margin: "0 0 12px" }}>AeroStation Hub will soon transition to email and password sign-in. Please add or verify your email address to ensure uninterrupted access. Your PIN will continue working during the transition.</p>
+        <FieldLabel>Email address for future login</FieldLabel>
+        <TextInput type="email" autoComplete="email" placeholder="name@example.com" value={email} onChange={e => setEmail(e.target.value)} />
+        <p style={{ fontSize: 12, color: "#92400e", marginBottom: 0 }}>Save your profile below to register this email. An invitation will be sent after the new sign-in is activated.</p>
+      </PageCard>
 
       {error && (
         <PageCard

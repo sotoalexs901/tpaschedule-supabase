@@ -323,6 +323,18 @@ export default function LoginPage() {
       <div className="login-right">
         <div className="login-card">
 
+          <section className="login-birthday" aria-label="Celebrating AeroStation Hub's first anniversary">
+            <div className="login-birthday-confetti" aria-hidden="true">✦ · ✨ · ✦ · ✨ · ✦</div>
+            <div className="login-birthday-characters" aria-hidden="true">
+              <span className="birthday-dancer birthday-dancer-left">🥳</span>
+              <span className="birthday-cake">🎂</span>
+              <span className="birthday-dancer birthday-dancer-right">🎉</span>
+            </div>
+            <div className="login-birthday-heading">We're turning ONE! 🎈</div>
+            <p className="login-birthday-copy">Happy 1st Birthday, AeroStation Hub!</p>
+            <p className="login-birthday-thanks">One year of smarter operations. Thank you to our amazing team!</p>
+          </section>
+
           <div className="login-brand">
 
             <div className="login-brand-icon">

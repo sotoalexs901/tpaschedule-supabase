@@ -12,7 +12,7 @@ const duration=(start,end)=>{if(!start)return 'Not started';const a=new Date(sta
 function SignaturePad({onSave,onCancel,busy}) {
   const canvasRef=useRef(null),drawing=useRef(false),signed=useRef(false);
   const point=e=>{const c=canvasRef.current,r=c.getBoundingClientRect();return {x:(e.clientX-r.left)*c.width/r.width,y:(e.clientY-r.top)*c.height/r.height};};
-  const start=e=>{if(busy)return;const c=canvasRef.current,p=point(e),ctx=c.getContext('2d');drawing.current=true;c.setPointerCapture(e.pointerId);ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineWidth=2.5;ctx.lineCap='round';ctx.strokeStyle='#0f172a';};
+  const start=e=>{if(busy)return;const c=canvasRef.current,p=point(e),ctx=c.getContext('2d');drawing.current=true;c.setPointerCapture(e.pointerId);ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineWidth=2.5;ctx.lineCap='round';ctx.strokeStyle='#0f172a';ctx.lineTo(p.x+0.1,p.y+0.1);ctx.stroke();signed.current=true;};
   const move=e=>{if(!drawing.current)return;const p=point(e),ctx=canvasRef.current.getContext('2d');ctx.lineTo(p.x,p.y);ctx.stroke();signed.current=true;};
   const stop=()=>{drawing.current=false;};
   const clear=()=>{const c=canvasRef.current;c.getContext('2d').clearRect(0,0,c.width,c.height);signed.current=false;};

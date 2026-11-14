@@ -67,7 +67,7 @@
   /* Extra browser-chrome breathing room for regular Safari tabs. */
   @supports (-webkit-touch-callout: none) {
     .aerohub-mobile-stationbar {
-      padding-top: max(54px, calc(env(safe-area-inset-top, 0px) + 18px)) !important;
+      padding-top: max(18px, env(safe-area-inset-top, 0px)) !important;
     }
   }
 
@@ -182,7 +182,8 @@
     min-width: 0 !important;
     margin: 0 !important;
     padding: 10px !important;
-    overflow-x: hidden !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
   }
 
   .aerohub-main > * {
@@ -236,5 +237,37 @@
 
   .aerohub-mobile-menu {
     display: none !important;
+  }
+}
+
+/* Mobile stabilization: safe-area spacing and accessible touch targets. */
+@media screen and (max-width: 760px) {
+  .aerohub-mobile-floating-menu {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .aerohub-sidebar-nav .aerohub-nav-link {
+    min-height: 44px;
+  }
+  .aerohub-main img,
+  .aerohub-main video,
+  .aerohub-main canvas {
+    max-width: 100%;
+  }
+  .aerohub-main input,
+  .aerohub-main select,
+  .aerohub-main textarea {
+    max-width: 100%;
+  }
+}
+
+/* WCHR dispatch: stack map and selected-agent detail on narrow devices. */
+@media screen and (max-width: 760px) {
+  .wchr-dispatch-map-layout {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  .wchr-dispatch-map-layout > * {
+    min-width: 0;
+    max-width: 100%;
   }
 }

@@ -1500,7 +1500,7 @@ function OperationalGpsMap({ agents = [], catalog = [], routes = [], now = Date.
           ))}
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: selected || selectedReference ? "minmax(0,1.65fr) minmax(260px,.85fr)" : "1fr", gap: 12, alignItems: "stretch" }}>
+        <div className="wchr-dispatch-map-layout" style={{ display: "grid", gridTemplateColumns: selected || selectedReference ? "minmax(0,1.65fr) minmax(260px,.85fr)" : "1fr", gap: 12, alignItems: "stretch" }}>
           <div style={{ borderRadius: 14, border: "1px solid #cbd5e1", overflow: "hidden", background: "#dbeafe", minHeight: 430, position: "relative" }}>
             {!leafletReady && !leafletError && (
               <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", zIndex: 2, color: "#475569", fontWeight: 800, background: "#eff6ff" }}>Loading interactive TPA map...</div>

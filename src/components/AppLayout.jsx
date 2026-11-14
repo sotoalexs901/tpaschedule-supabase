@@ -1257,6 +1257,7 @@ export default function AppLayout() {
         icon: "\u{1F4AC}",
         badgeValue: unreadMessages,
       },
+      { to: "/operational-chat", label: "Operational Chat", icon: "\\u{1F4E1}" },
       {
         to: "/notifications",
         label: "Notifications",
