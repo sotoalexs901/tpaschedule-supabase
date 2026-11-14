@@ -22,6 +22,7 @@ import {
 import { triggerDashboardEventRsvpPush } from "../utils/dashboardEventPush.js";
 import LiveFlightsPanel from "../components/LiveFlightsPanel.jsx";
 import AirportWeatherPanel from "../components/AirportWeatherPanel.jsx";
+import WeeklyScheduleGallery from "../components/WeeklyScheduleGallery.jsx";
 
 function getDefaultPosition(role) {
   if (role === "station_manager") return "Station Manager";
@@ -3259,6 +3260,9 @@ export default function EmployeeDashboardPage() {
               )}
             </div>
           </GlassCard>
+
+          {/* Published weekly department schedules are available to agents and supervisors too. */}
+          <WeeklyScheduleGallery />
 
           <GlassCard
             title={
