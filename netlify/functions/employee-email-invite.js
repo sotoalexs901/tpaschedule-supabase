@@ -51,7 +51,7 @@ exports.handler = async event => {
       } catch (err) { if (err.code !== "auth/user-not-found") throw err; }
       const key = crypto.randomBytes(32).toString("base64url");
       const expiresAt = Date.now() + 24 * 60 * 60 * 1000;
-      const url = "https://tpaschedule-supabase.netlify.app/activate-email?token=" + encodeURIComponent(key);
+      const url = "https://tpaschedule-supabase.netlify.app/activate-email?userId=" + encodeURIComponent(userId) + "&token=" + encodeURIComponent(key);
       const sender = process.env.AEROSTATION_INVITE_FROM_EMAIL;
       if (!process.env.RESEND_API_KEY || !sender) return reply(503, { error: "Invitation email service not configured" });
       const name = String(employee.displayName || employee.username || "Team member").slice(0, 120);
