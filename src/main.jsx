@@ -50,6 +50,7 @@ import CrewAnnouncementsPage from "./pages/CrewAnnouncementsPage.jsx";
 import TimeOffRequestPage from "./pages/TimeOffRequestPage.jsx";
 import EmployeeTimeOffStatusPage from "./pages/EmployeeTimeOffStatusPage.jsx";
 import MessagesPage from "./pages/MessagesPage.jsx";
+import OperationalChatPanel from "./components/OperationalChatPanel.jsx";
 import NotificationsPage from "./pages/NotificationsPage.jsx";
 import ProfilePage from "./pages/ProfilePage.jsx";
 import AdminActivityDashboard from "./pages/AdminActivityDashboard.jsx";
@@ -545,6 +546,7 @@ function AppRouter() {
           <Route path="dashboard" element={<DashboardEntry />} />
           <Route path="profile" element={<ProfilePage />} />
           <Route path="messages" element={<MessagesPage />} />
+          <Route path="operational-chat" element={<OperationalChatPanel />} />
           <Route path="notifications" element={<NotificationsPage />} />
 
           <Route
