@@ -8,7 +8,8 @@ import React, {
 } from "react";
 
 import { doc, getDoc } from "firebase/firestore";
-import { db } from "./firebase";
+import { auth, db } from "./firebase";
+import { signOut } from "firebase/auth";
 import { endUmnrSession } from "./utils/umnrClient.js";
 
 const UserContext = createContext({
@@ -48,6 +49,27 @@ export function UserProvider({ children }) {
         if (!Number.isFinite(lastActivity) || !lastActivity || Date.now() - lastActivity >= LOGOUT_MS) {
           localStorage.removeItem(STORAGE_KEY);
           localStorage.removeItem(LAST_ACTIVITY_KEY);
+          return;
+        }
+        if (saved.authMethod === "firebase") {
+          // A cached user profile is never sufficient to restore an email session.
+          await auth.authStateReady();
+          const firebaseUser = auth.currentUser;
+          if (!firebaseUser || firebaseUser.uid !== saved.authUid) {
+            localStorage.removeItem(STORAGE_KEY);
+            return;
+          }
+          const token = await firebaseUser.getIdToken();
+          const response = await fetch("/.netlify/functions/employee-auth-profile", {
+            headers: { Authorization: `Bearer ${token}` },
+            cache: "no-store",
+          });
+          if (!response.ok) {
+            localStorage.removeItem(STORAGE_KEY);
+            return;
+          }
+          const payload = await response.json();
+          if (!cancelled && payload.user?.id === saved.id) setUserState(payload.user);
           return;
         }
         // Firebase is authoritative. A locally saved acceptance is not proof.
@@ -133,6 +155,7 @@ export function UserProvider({ children }) {
 
   const logout = () => {
     endUmnrSession().catch(() => {});
+    signOut(auth).catch(() => {});
     clearTimers();
     setShowSessionWarning(false);
     setUser(null);
