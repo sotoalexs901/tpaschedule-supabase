@@ -590,6 +590,7 @@ export default function EditUsersPage() {
         const loadedUsers = usersSnap.docs.map((d) => ({
           id: d.id,
           ...d.data(),
+          __originalEmail: d.data().email || "",
         }));
 
         const loadedEmployees = employeesSnap.docs
@@ -684,6 +685,11 @@ export default function EditUsersPage() {
       );
 
       const normalizedEmail = normalizeLower(userRecord.email);
+      const savedRecord = users.find((entry) => entry.id === userRecord.id);
+      if (userRecord.authUid && normalizedEmail !== normalizeLower(savedRecord?.__originalEmail ?? userRecord.__originalEmail ?? userRecord.email)) {
+        setStatus("This account uses Firebase sign-in. Email changes require verification through the old email.");
+        return;
+      }
       if (normalizedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
         setStatus("Enter a valid email address.");
         return;
