@@ -503,6 +503,13 @@ function MobileUserCard({
         </div>
 
         <div>
+          <div style={mobileLabelStyle}>Email address</div>
+          <TextInput type="email" autoComplete="email" value={userRecord.email || ""}
+            onChange={(e) => onChange(userRecord.id, "email", e.target.value)}
+            placeholder="name@example.com" />
+        </div>
+
+        <div>
           <div style={mobileLabelStyle}>PIN</div>
           <TextInput
             type="password"
@@ -646,6 +653,7 @@ export default function EditUsersPage() {
       const employee = userRecord.__matchedEmployee;
       const haystack = [
         userRecord.username,
+        userRecord.email,
         userRecord.role,
         getVisibleUserName(userRecord),
         employee ? getVisibleEmployeeName(employee) : "",
@@ -676,7 +684,17 @@ export default function EditUsersPage() {
         (employee) => employee.id === userRecord.employeeId
       );
 
+      const normalizedEmail = normalizeLower(userRecord.email);
+      if (normalizedEmail && !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(normalizedEmail)) {
+        setStatus("Please enter a valid email address.");
+        return;
+      }
+      if (normalizedEmail && users.some((item) => item.id !== userRecord.id && normalizeLower(item.email) === normalizedEmail)) {
+        setStatus("This email address is already assigned to another user.");
+        return;
+      }
       const payload = {
+        email: normalizedEmail,
         username: normalizeText(userRecord.username),
         pin: normalizeText(userRecord.pin),
         role: userRecord.role || "agent",
@@ -1126,6 +1144,7 @@ export default function EditUsersPage() {
                   <th style={thStyle({ minWidth: 240 })}>Employee Profile</th>
                   <th style={thStyle({ minWidth: 230 })}>Link Profile</th>
                   <th style={thStyle({ minWidth: 210 })}>Username</th>
+                  <th style={thStyle({ minWidth: 220 })}>Email</th>
                   <th style={thStyle({ minWidth: 150 })}>PIN</th>
                   <th style={thStyle({ minWidth: 170 })}>Role</th>
                   <th style={thStyle({ textAlign: "center" })}>Save</th>
@@ -1206,6 +1225,12 @@ export default function EditUsersPage() {
                           )}
                       </td>
 
+                      <td style={tdStyle}>
+                        <TextInput type="email" autoComplete="email"
+                          value={userRecord.email || ""}
+                          onChange={(e) => handleChange(userRecord.id, "email", e.target.value)}
+                          placeholder="name@example.com" style={{ fontSize: 13 }} />
+                      </td>
                       <td style={tdStyle}>
                         <TextInput
                           type="password"
