@@ -17,6 +17,7 @@ import OperationalAlertsPanel from "../components/OperationalAlertsPanel.jsx";
 import EventRsvpSummary from "../components/EventRsvpSummary.jsx";
 import LiveFlightsPanel from "../components/LiveFlightsPanel.jsx";
 import AirportWeatherPanel from "../components/AirportWeatherPanel.jsx";
+import SeasonalCelebrationBanner from "../components/SeasonalCelebrationBanner.jsx";
 
 const FIXED_AUTHOR = "AeroStation Hub";
 
@@ -1045,6 +1046,7 @@ export default function DashboardPage() {
           "Poppins, Inter, system-ui, sans-serif",
       }}
     >
+      <SeasonalCelebrationBanner />
       <div
         style={{
           background:
