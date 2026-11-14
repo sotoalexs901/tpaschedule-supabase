@@ -14,7 +14,7 @@ function init() {
   }
 }
 const emailOf = v => String(v || "").trim().toLowerCase();
-const validEmail = v => /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(v);
+const validEmail = v => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
 const digest = v => crypto.createHash("sha256").update(v).digest("hex");
 exports.handler = async event => {
   if (event.httpMethod !== "POST") return reply(405, { error: "Method not allowed" });
@@ -52,7 +52,7 @@ exports.handler = async event => {
       const key = crypto.randomBytes(32).toString("base64url");
       const expiresAt = Date.now() + 24 * 60 * 60 * 1000;
       const url = "https://tpaschedule-supabase.netlify.app/activate-email?userId=" + encodeURIComponent(userId) + "&token=" + encodeURIComponent(key);
-      const sender = process.env.AEROSTATION_INVITE_FROM_EMAIL;
+      const sender = process.env.AEROSTATION_INVITE_FROM;
       if (!process.env.RESEND_API_KEY || !sender) return reply(503, { error: "Invitation email service not configured" });
       const name = String(employee.displayName || employee.username || "Team member").slice(0, 120);
       const res = await fetch("https://api.resend.com/emails", {
@@ -79,7 +79,7 @@ exports.handler = async event => {
       const inviteSnap = await invitationRef.get();
       if (!inviteSnap.exists) return reply(404, { error: "Invitation not found" });
       const invite = inviteSnap.data();
-      if (invite.status !== "sent" || invite.expiresAt.toMillis() < Date.now() || !crypto.timingSafeEqual(Buffer.from(digest(token)), Buffer.from(invite.tokenHash)))
+      if (invite.status !== "sent" || !invite.tokenHash || invite.expiresAt.toMillis() < Date.now() || !crypto.timingSafeEqual(Buffer.from(digest(token)), Buffer.from(invite.tokenHash)))
         return reply(403, { error: "Invitation expired or invalid" });
       const userRef = store.collection("users").doc(userId);
       const userSnap = await userRef.get();
