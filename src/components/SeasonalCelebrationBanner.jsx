@@ -9,17 +9,17 @@ export function getSeasonalCelebration(now = new Date()) {
   }).formatToParts(now);
   const parts = Object.fromEntries(date.map(({ type, value }) => [type, value]));
   const day = `${parts.year}-${parts.month}-${parts.day}`;
-  if (day < "2026-12-01") return {
+  if (day >= "2026-11-01" && day < "2026-12-01") return {
     name: "birthday", emojis: ["🥳", "🎂", "🎉"],
     title: "Happy 1st Birthday, AeroStation Hub! 🎈",
     message: "One year of smarter operations. Thank you to our amazing team!",
   };
-  if (day < "2026-12-26") return {
+  if (day >= "2026-12-01" && day < "2026-12-26") return {
     name: "christmas", emojis: ["🎅", "🎄", "🎁"],
     title: "Merry Christmas! ❄️",
     message: "Wishing our entire AeroStation Hub team a joyful and safe holiday season!",
   };
-  if (day < "2027-02-16") return {
+  if (day >= "2026-12-26" && day < "2027-02-16") return {
     name: "newyear", emojis: ["🥳", "🎆", "🎉"],
     title: "Happy New Year 2027! ✨",
     message: "A new year of teamwork, safety and smarter operations!",
