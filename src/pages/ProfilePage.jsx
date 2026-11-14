@@ -540,21 +540,17 @@ export default function ProfilePage() {
       setPhotoPreviewURL("");
 
       if (typeof setUser === "function") {
-        setUser((prev) =>
-          prev
-            ? {
-                ...prev,
-                pin: normalizedPin,
-                email: normalizedEmail,
-                profilePhotoURL: finalPhotoURL,
-                displayName: normalizedDisplayName,
-                position: normalizedPosition,
-                birthDate: "",
-                birthdayMonth: normalizedBirthdayMonth,
-                birthdayDay: normalizedBirthdayDay,
-              }
-            : prev
-        );
+        setUser({
+          ...user,
+          pin: normalizedPin,
+          email: normalizedEmail,
+          profilePhotoURL: finalPhotoURL,
+          displayName: normalizedDisplayName,
+          position: normalizedPosition,
+          birthDate: "",
+          birthdayMonth: normalizedBirthdayMonth,
+          birthdayDay: normalizedBirthdayDay,
+        });
       }
 
       setMessage(
