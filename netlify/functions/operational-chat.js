@@ -28,7 +28,7 @@ async function identity(event) {
   if (!match) return null;
   const decoded = await admin.auth().verifyIdToken(match[1], true);
   const snap = await admin.firestore().collection("users").doc(decoded.uid).get();
-  if (!snap.exists || snap.data()?.status === "inactive") return null;
+  if (!snap.exists || snap.data()?.status !== "active") return null;
   return { uid: decoded.uid, role: text(snap.data()?.role, 60), name: text(snap.data()?.displayName || snap.data()?.name || snap.data()?.username, 100) };
 }
 async function member(db, chatId, uid) {
@@ -49,6 +49,7 @@ exports.handler = async (event) => {
     const db = admin.firestore();
     if (Buffer.byteLength(event.body || "", "utf8") > 16384) return response(413, { error: "Request too large." });
     const body = JSON.parse(event.body || "{}");
+    if (!body || typeof body !== "object" || Array.isArray(body)) return response(400, { error: "Invalid request." });
     const action = text(body.action, 40);
     if (action === "list") {
       const snap = await db.collection("operationalChats").where("memberIds", "array-contains", user.uid).limit(100).get();
@@ -57,7 +58,7 @@ exports.handler = async (event) => {
     if (action === "employees") {
       if (!["station_manager", "duty_manager", "supervisor"].includes(user.role)) return response(403, { error: "Not authorized." });
       const snap = await db.collection("users").limit(500).get();
-      const employees = snap.docs.filter(d => d.id !== user.uid && d.data()?.status !== "inactive").map(d => ({
+      const employees = snap.docs.filter(d => d.id !== user.uid && d.data()?.status === "active").map(d => ({
         id: d.id,
         name: text(d.data()?.displayName || d.data()?.fullName || d.data()?.name || d.data()?.username || "Employee", 100),
         role: text(d.data()?.role, 60),
@@ -70,11 +71,12 @@ exports.handler = async (event) => {
       const audience = text(body.audience, 20) || "invited";
       if (!name || !["invited", "supervisors", "dutys"].includes(audience)) return response(400, { error: "Invalid chat." });
       if (audience === "dutys" && !["station_manager", "duty_manager"].includes(user.role)) return response(403, { error: "Not authorized." });
+      if (!roleAllowed(user.role, { audience })) return response(403, { error: "Your role cannot create this channel." });
       const rawInvitees = Array.isArray(body.inviteeIds) ? body.inviteeIds : [];
       if (rawInvitees.length > 40) return response(400, { error: "Too many invitees." });
       const invitees = [...new Set(rawInvitees.map(x => text(x, 128)))].filter(Boolean);
       const docs = await Promise.all(invitees.map(id => db.collection("users").doc(id).get()));
-      if (docs.some(d => !d.exists || d.data()?.status === "inactive")) return response(400, { error: "Unknown or inactive employee." });
+      if (docs.some(d => !d.exists || d.data()?.status !== "active")) return response(400, { error: "Unknown or inactive employee." });
       if (docs.some(d => !roleAllowed(text(d.data().role, 60), { audience }))) return response(400, { error: "Invitee role is not permitted in this chat." });
       if (invitees.length === 0) return response(400, { error: "Select at least one employee." });
       const ref = db.collection("operationalChats").doc();
@@ -121,7 +123,7 @@ exports.handler = async (event) => {
         if (action === "react") {
           const emoji = text(body.emoji, 8);
           if (!["👍", "❤️", "✅", "⚠️"].includes(emoji)) throw new Error("Invalid reaction.");
-          const reactions = msg.reactions || {};
+          const reactions = { ...(msg.reactions || {}) };
           const users = Array.isArray(reactions[emoji]) ? reactions[emoji] : [];
           reactions[emoji] = users.includes(user.uid) ? users.filter(id => id !== user.uid) : [...users, user.uid];
           tx.update(ref, { reactions });
