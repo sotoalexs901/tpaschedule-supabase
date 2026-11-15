@@ -37,16 +37,28 @@ exports.handler = async event => {
     if (!week || !Array.isArray(ids) || !ids.length || ids.length > 200 || ids.some(id => typeof id !== "string" || !id || id.includes("/")) || new Set(ids).size !== ids.length) return respond(400, { error: "Invalid week or schedule IDs" });
     const refs = ids.map(id => db.collection("schedules").doc(id));
     const docs = await db.getAll(...refs);
-    if (docs.some(d => !d.exists || d.data().status !== "approved" || normalizeWeek(d.data().weekStart || d.data().weekTag) !== week)) return respond(409, { error: "Schedule list changed. Refresh before deleting." });
-    // Preserve an auditable backup of every removed schedule before deleting the originals.
+    const invalid = docs.filter(d => !d.exists || d.data()?.status !== "approved");
+    if (invalid.length) return respond(409, { error: "Some schedules are no longer approved. Refresh and try again." });
+    const mismatched = docs.filter(d => {
+      const s = d.data();
+      const actual = normalizeWeek(s.weekStart || s.weekTag || s.startDate);
+      // Legacy schedules may have no weekStart, so only reject an explicit mismatch.
+      return actual && actual !== week;
+    });
+    if (mismatched.length) return respond(409, { error: "Schedule week mismatch. Refresh and try again." });
+    // A separate audit document per schedule prevents exceeding Firestore's 1 MiB document limit.
     const auditRef = db.collection("schedule_deletion_audit").doc();
     const batch = db.batch();
-    batch.set(auditRef, { weekStart: week, deletedBy: identity.uid, deletedByEmail: identity.email, deletedAt: admin.firestore.FieldValue.serverTimestamp(), scheduleIds: ids, schedules: docs.map(d => ({ id: d.id, data: d.data() })) });
-    refs.forEach(ref => batch.delete(ref));
+    batch.set(auditRef, { weekStart: week, deletedBy: identity.uid, deletedByEmail: identity.email,
+      deletedAt: admin.firestore.FieldValue.serverTimestamp(), scheduleIds: ids, count: ids.length });
+    docs.forEach(d => {
+      batch.set(auditRef.collection("schedules").doc(d.id), { originalData: d.data(), originalId: d.id });
+      batch.delete(d.ref);
+    });
     await batch.commit();
     return respond(200, { deleted: ids.length, weekStart: week, auditId: auditRef.id });
   } catch (error) {
     console.error("Bulk approved schedule delete failed", error.code || error.message);
-    return respond(500, { error: "Unable to delete schedules" });
+    return respond(500, { error: "Unable to delete schedules. " + String(error.message || "Please contact support.").slice(0, 180) });
   }
 };

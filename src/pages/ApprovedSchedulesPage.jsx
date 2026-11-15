@@ -1090,6 +1090,8 @@ export default function ApprovedSchedulesPage() {
   const [distributionModal, setDistributionModal] =
     useState(null);
   const [deletingWeek, setDeletingWeek] = useState("");
+  const [deleteConfirmation, setDeleteConfirmation] = useState(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
 
   const canDistribute =
     normalizeText(
@@ -1444,16 +1446,12 @@ export default function ApprovedSchedulesPage() {
     );
 
   const handleDeleteWeek = async (weekTag, list) => {
-    if (!canDistribute || deletingWeek || !list.length) return;
+    if (!canDistribute || deletingWeek || !list.length || deleteConfirmText !== "DELETE") return;
     const normalizedWeek = normalizeDateString(weekTag);
     if (!normalizedWeek) {
       setStatusMessage("This week has no valid start date and cannot be bulk deleted.");
       return;
     }
-    const confirmation = window.prompt(
-      `Delete ALL ${list.length} approved schedule(s) for week ${normalizedWeek}? This will remove them from Approved Schedules, Dashboard and My Schedule. Type DELETE to confirm.`
-    );
-    if (confirmation !== "DELETE") return;
     setDeletingWeek(weekTag);
     try {
       const current = auth.currentUser;
@@ -1464,14 +1462,16 @@ export default function ApprovedSchedulesPage() {
         headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
         body: JSON.stringify({ weekStart: normalizedWeek, scheduleIds: list.map(item => item.id) }),
       });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "Unable to delete schedules");
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || `Server returned ${response.status}. Please retry or contact support.`);
       await load();
       setStatusMessage(`Deleted ${result.deleted} approved schedule(s) for ${normalizedWeek}. Audit backup: ${result.auditId}.`);
     } catch (error) {
       setStatusMessage(error.message || "Unable to delete approved schedules.");
     } finally {
       setDeletingWeek("");
+      setDeleteConfirmation(null);
+      setDeleteConfirmText("");
     }
   };
 
@@ -1604,6 +1604,21 @@ export default function ApprovedSchedulesPage() {
           </p>
         </div>
       </div>
+
+      {deleteConfirmation && (
+        <div role="dialog" aria-modal="true" aria-label="Confirm weekly schedule deletion" style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(15,23,42,.72)", display: "flex", alignItems: "center", justifyContent: "center", padding: 18 }}>
+          <div style={{ background: "#fff", color: "#0f172a", borderRadius: 18, padding: 24, width: "100%", maxWidth: 440, boxShadow: "0 24px 70px rgba(0,0,0,.3)" }}>
+            <h3 style={{ margin: "0 0 12px" }}>Delete weekly schedules?</h3>
+            <p>You are about to permanently remove <strong>{deleteConfirmation.list.length} approved schedules</strong> for week <strong>{formatWeekTagLabel(deleteConfirmation.weekTag)}</strong>. They will also disappear from Dashboard and My Schedule. An audit backup will be retained.</p>
+            <label htmlFor="confirm-week-delete" style={{ display: "block", fontWeight: 700, marginBottom: 8 }}>Type DELETE to confirm</label>
+            <input id="confirm-week-delete" value={deleteConfirmText} onChange={e => setDeleteConfirmText(e.target.value)} autoComplete="off" style={{ width: "100%", boxSizing: "border-box", padding: 12, border: "1px solid #94a3b8", borderRadius: 8, fontSize: 16 }} />
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
+              <button type="button" disabled={Boolean(deletingWeek)} onClick={() => { setDeleteConfirmation(null); setDeleteConfirmText(""); }} style={{ padding: "10px 14px", border: "1px solid #cbd5e1", borderRadius: 8, background: "#fff" }}>Cancel</button>
+              <button type="button" disabled={deleteConfirmText !== "DELETE" || Boolean(deletingWeek)} onClick={() => handleDeleteWeek(deleteConfirmation.weekTag, deleteConfirmation.list)} style={{ padding: "10px 14px", border: 0, borderRadius: 8, background: deleteConfirmText === "DELETE" ? "#b91c1c" : "#cbd5e1", color: "#fff", fontWeight: 700 }}>{deletingWeek ? "Deleting..." : "Delete schedules"}</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {statusMessage && (
         <PageCard
@@ -1762,7 +1777,7 @@ export default function ApprovedSchedulesPage() {
                       <button
                         type="button"
                         disabled={Boolean(deletingWeek)}
-                        onClick={() => handleDeleteWeek(weekTag, list)}
+                        onClick={() => { setDeleteConfirmText(""); setDeleteConfirmation({ weekTag, list }); }}
                         style={{ marginTop: 12, border: "1px solid #fecaca", color: "#b91c1c", background: "#fff1f2", borderRadius: 9, padding: "8px 12px", fontWeight: 700, cursor: deletingWeek ? "wait" : "pointer" }}
                       >
                         {deletingWeek === weekTag ? "Deleting..." : `Delete all ${list.length} schedules for this week`}
