@@ -85,11 +85,11 @@ function statusStyle(status) {
   return { background: "#f8fafc", color: "#475569", border: "#e2e8f0" };
 }
 
-function Metric({ label, value, emphasized = false }) {
+function Metric({ label, value, emphasized = false, compact = false }) {
   return (
-    <div style={{ background: emphasized ? "#eff6ff" : "#f8fafc", borderRadius: 11, padding: "8px 9px" }}>
-      <div style={{ fontSize: 8.5, color: "#94a3b8", fontWeight: 900, letterSpacing: ".08em" }}>{label}</div>
-      <div style={{ marginTop: 2, fontSize: 12.5, color: emphasized ? "#1d4ed8" : "#334155", fontWeight: 900 }}>{value}</div>
+    <div style={{ background: emphasized ? "#eff6ff" : "#f8fafc", borderRadius: compact ? 7 : 11, padding: compact ? "5px 4px" : "8px 9px" }}>
+      <div style={{ fontSize: compact ? 8 : 8.5, color: "#94a3b8", fontWeight: 900, letterSpacing: ".08em" }}>{label}</div>
+      <div style={{ marginTop: 2, fontSize: compact ? 10 : 12.5, overflowWrap: "anywhere", color: emphasized ? "#1d4ed8" : "#334155", fontWeight: 900 }}>{value}</div>
     </div>
   );
 }
@@ -343,17 +343,17 @@ function FlightCard({ flight, compact }) {
       style={{
         border: "1px solid #dbe5ef",
         borderRadius: compact ? 15 : 18,
-        padding: compact ? 12 : 14,
+        padding: compact ? 9 : 14,
         background: "linear-gradient(135deg,#ffffff 0%,#f8fbff 100%)",
         boxShadow: "0 8px 22px rgba(15,23,42,0.04)",
       }}
     >
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: compact ? 4 : 10, alignItems: "flex-start", flexWrap: compact ? "wrap" : "nowrap" }}>
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: compact ? 18 : 20, fontWeight: 900, color: "#0f172a" }}>
+          <div style={{ fontSize: compact ? 15 : 20, fontWeight: 900, color: "#0f172a" }}>
             {flight.flightNumber || "Flight"}
           </div>
-          <div style={{ marginTop: 2, color: "#64748b", fontSize: 11.5, fontWeight: 700 }}>
+          <div style={{ marginTop: 2, color: "#64748b", fontSize: compact ? 10 : 11.5, fontWeight: 700 }}>
             {(flight.origin || "—")} → {(flight.destination || "TPA")}
           </div>
         </div>
@@ -364,8 +364,8 @@ function FlightCard({ flight, compact }) {
             background: badge.background,
             color: badge.color,
             borderRadius: 999,
-            padding: "5px 8px",
-            fontSize: 9.5,
+            padding: compact ? "3px 5px" : "5px 8px",
+            fontSize: compact ? 8 : 9.5,
             fontWeight: 900,
             letterSpacing: ".05em",
           }}
@@ -378,42 +378,42 @@ function FlightCard({ flight, compact }) {
         style={{
           display: "grid",
           gridTemplateColumns: compact ? "repeat(2,minmax(0,1fr))" : "repeat(4,minmax(0,1fr))",
-          gap: 8,
-          marginTop: 12,
+          gap: compact ? 4 : 8,
+          marginTop: compact ? 7 : 12,
         }}
       >
-        <Metric label="STD" value={formatTime(std)} />
-        <Metric label="STA" value={formatTime(sta)} />
-        <Metric label="ATD" value={formatTime(atd)} />
-        <Metric label="ETA" value={formatTime(eta)} emphasized />
+        <Metric label="STD" value={formatTime(std)} compact={compact} />
+        <Metric label="STA" value={formatTime(sta)} compact={compact} />
+        <Metric label="ATD" value={formatTime(atd)} compact={compact} />
+        <Metric label="ETA" value={formatTime(eta)} emphasized compact={compact} />
       </div>
 
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+      {!compact && <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
         <span style={{ fontSize: 10.5, color: delayMinutes > 0 ? "#c2410c" : "#64748b", fontWeight: 800 }}>
           {delayMinutes > 0 ? `Arrival delay +${delayMinutes} min` : (sta ? "On schedule / no arrival delay detected" : "Schedule pending")}
         </span>
         <span style={{ fontSize: 10, color: "#94a3b8" }}>
           Updated {formatTime(flight.lastProviderUpdate || flight.syncedAt)}
         </span>
-      </div>
+      </div>}
 
       <button
         type="button"
         onClick={openDetails}
         style={{
           width: "100%",
-          marginTop: 11,
+          marginTop: compact ? 7 : 11,
           border: "1px solid #cfe1ef",
           borderRadius: 12,
-          padding: "8px 10px",
+          padding: compact ? "6px 4px" : "8px 10px",
           background: expanded ? "#eef7fd" : "#ffffff",
           color: "#0f5d8f",
-          fontSize: 11,
+          fontSize: compact ? 9 : 11,
           fontWeight: 900,
           cursor: "pointer",
         }}
       >
-        {expanded ? "Hide flight details" : "View live flight details"}
+        {expanded ? "Hide details" : compact ? "View details" : "View live flight details"}
       </button>
 
       {expanded && (
@@ -499,7 +499,7 @@ export default function LiveFlightsPanel({ compact = false, maxItems = 6 }) {
       ) : !visibleFlights.length ? (
         <div style={{ color: "#64748b", fontSize: 13, padding: "10px 2px" }}>No monitored flights available today.</div>
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: compact ? "1fr" : "repeat(auto-fit,minmax(250px,1fr))", gap: 10 }}>
+        <div style={{ display: "grid", gridTemplateColumns: compact ? "repeat(2,minmax(0,1fr))" : "repeat(auto-fit,minmax(250px,1fr))", gap: 10 }}>
           {visibleFlights.map((flight) => (
             <FlightCard key={flight.id} flight={flight} compact={compact} />
           ))}
