@@ -2927,43 +2927,6 @@ export default function EmployeeDashboardPage() {
         >
           <GlassCard
             title={
-              t.quickActionsTitle
-            }
-            subtitle={
-              t.quickActionsSubtitle
-            }
-            icon={"\u26A1"}
-            accent="#1769aa"
-            isMobile={isMobile}
-          >
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns:
-                  isMobile
-                    ? "1fr"
-                    : "repeat(3, minmax(0, 1fr))",
-                gap: 10,
-              }}
-            >
-              {quickCards.map(
-                (card) => (
-                  <QuickActionTile
-                    key={
-                      card.subtitle
-                    }
-                    {...card}
-                    isMobile={
-                      isMobile
-                    }
-                  />
-                )
-              )}
-            </div>
-          </GlassCard>
-
-          <GlassCard
-            title={
               t.stationManagerMessage
             }
             subtitle={
@@ -3028,377 +2991,6 @@ export default function EmployeeDashboardPage() {
               setSelectedRecognizedEmployee
             }
           />
-
-          <GlassCard
-            title={
-              t.upcomingEvents
-            }
-            subtitle={
-              t.upcomingEventsSubtitle
-            }
-            icon={"\u{1F4C5}"}
-            accent="#3b82f6"
-            isMobile={isMobile}
-          >
-            {loading ? (
-              <p
-                style={{
-                  margin: 0,
-                  color:
-                    "#94a3b8",
-                }}
-              >
-                {t.loading}
-              </p>
-            ) : dashboardEvents.length ===
-              0 ? (
-              <p
-                style={{
-                  margin: 0,
-                  color:
-                    "#64748b",
-                }}
-              >
-                {t.noEvents}
-              </p>
-            ) : (
-              <div
-                style={{
-                  display: "grid",
-                  gap: 10,
-                }}
-              >
-                {dashboardEvents.map(
-                  (event) => (
-                    <div
-                      key={
-                        event.id
-                      }
-                      style={{
-                        borderRadius:
-                          16,
-                        padding: 13,
-                        background:
-                          "linear-gradient(135deg,#eff6ff 0%,#ffffff 100%)",
-                        border:
-                          "1px solid #dbeafe",
-                      }}
-                    >
-                      <p
-                        style={{
-                          margin: 0,
-                          fontWeight:
-                            900,
-                          fontSize:
-                            14,
-                          color:
-                            "#0f172a",
-                        }}
-                      >
-                        {event.title ||
-                          "Event"}
-                      </p>
-
-                      <p
-                        style={{
-                          margin:
-                            "5px 0 0",
-                          fontSize:
-                            11.5,
-                          color:
-                            "#2563eb",
-                          fontWeight:
-                            750,
-                        }}
-                      >
-                        {formatEventDate(
-                          event.date,
-                          language
-                        )}
-                        {event.time
-                          ? ` \u00B7 ${event.time}`
-                          : ""}
-                      </p>
-
-                      {event.details && (
-                        <p
-                          style={{
-                            margin:
-                              "7px 0 0",
-                            fontSize:
-                              12,
-                            color:
-                              "#475569",
-                            lineHeight:
-                              1.55,
-                            whiteSpace:
-                              "pre-line",
-                          }}
-                        >
-                          {
-                            event.details
-                          }
-                        </p>
-                      )}
-
-                      {event.rsvpEnabled ===
-                        true && (
-                        <EventResponseButtons
-                          event={
-                            event
-                          }
-                          selectedResponse={
-                            eventResponses[
-                              event.id
-                            ] || ""
-                          }
-                          saving={
-                            savingEventResponse ===
-                            event.id
-                          }
-                          language={
-                            language
-                          }
-                          onRespond={
-                            handleEventResponse
-                          }
-                        />
-                      )}
-                    </div>
-                  )
-                )}
-              </div>
-            )}
-          </GlassCard>
-
-          <GlassCard
-            title={
-              t.notices
-            }
-            subtitle={
-              t.noticesSubtitle
-            }
-            icon={"\u{1F4CC}"}
-            accent="#f59e0b"
-            isMobile={isMobile}
-          >
-            {dashboardNotices.length ===
-            0 ? (
-              <p
-                style={{
-                  margin: 0,
-                  color:
-                    "#64748b",
-                }}
-              >
-                {t.noNotices}
-              </p>
-            ) : (
-              <div
-                style={{
-                  display: "grid",
-                  gap: 9,
-                }}
-              >
-                {dashboardNotices.map(
-                  (item) => (
-                    <div
-                      key={
-                        item.id
-                      }
-                      style={{
-                        borderRadius:
-                          15,
-                        padding:
-                          12,
-                        background:
-                          "linear-gradient(135deg,#fffbeb 0%,#ffffff 100%)",
-                        border:
-                          "1px solid #fde68a",
-                      }}
-                    >
-                      <p
-                        style={{
-                          margin: 0,
-                          fontWeight:
-                            850,
-                          color:
-                            "#0f172a",
-                          fontSize:
-                            13.5,
-                        }}
-                      >
-                        {item.title ||
-                          "Notice"}
-                      </p>
-
-                      {item.body && (
-                        <p
-                          style={{
-                            margin:
-                              "7px 0 0",
-                            fontSize:
-                              12,
-                            color:
-                              "#475569",
-                            lineHeight:
-                              1.55,
-                            whiteSpace:
-                              "pre-line",
-                          }}
-                        >
-                          {
-                            item.body
-                          }
-                        </p>
-                      )}
-
-                      {item.link && (
-                        <a
-                          href={
-                            item.link
-                          }
-                          target="_blank"
-                          rel="noreferrer"
-                          style={{
-                            display:
-                              "inline-block",
-                            marginTop:
-                              8,
-                            fontSize:
-                              11.5,
-                            fontWeight:
-                              800,
-                            color:
-                              "#b45309",
-                            textDecoration:
-                              "none",
-                          }}
-                        >
-                          {t.viewMore}{" "}
-                          {"\u2192"}
-                        </a>
-                      )}
-                    </div>
-                  )
-                )}
-              </div>
-            )}
-          </GlassCard>
-
-          <GlassCard
-            title={
-              t.operationalDocs
-            }
-            subtitle={
-              t.operationalDocsSubtitle
-            }
-            icon={"\u{1F4C4}"}
-            accent="#10b981"
-            isMobile={isMobile}
-          >
-            {dashboardDocs.length ===
-            0 ? (
-              <p
-                style={{
-                  margin: 0,
-                  color:
-                    "#64748b",
-                }}
-              >
-                {t.noDocs}
-              </p>
-            ) : (
-              <div
-                style={{
-                  display: "grid",
-                  gap: 9,
-                }}
-              >
-                {dashboardDocs.map(
-                  (item) => (
-                    <div
-                      key={
-                        item.id
-                      }
-                      style={{
-                        borderRadius:
-                          15,
-                        padding:
-                          12,
-                        background:
-                          "linear-gradient(135deg,#ecfdf5 0%,#ffffff 100%)",
-                        border:
-                          "1px solid #d1fae5",
-                      }}
-                    >
-                      <p
-                        style={{
-                          margin: 0,
-                          fontWeight:
-                            850,
-                          color:
-                            "#0f172a",
-                          fontSize:
-                            13.5,
-                        }}
-                      >
-                        {item.title ||
-                          item.filename ||
-                          "Document"}
-                      </p>
-
-                      {item.filename && (
-                        <p
-                          style={{
-                            margin:
-                              "4px 0 0",
-                            fontSize:
-                              10.5,
-                            color:
-                              "#64748b",
-                          }}
-                        >
-                          {
-                            item.filename
-                          }
-                        </p>
-                      )}
-
-                      {item.url && (
-                        <a
-                          href={
-                            item.url
-                          }
-                          target="_blank"
-                          rel="noreferrer"
-                          style={{
-                            display:
-                              "inline-block",
-                            marginTop:
-                              8,
-                            fontSize:
-                              11.5,
-                            fontWeight:
-                              800,
-                            color:
-                              "#047857",
-                            textDecoration:
-                              "none",
-                          }}
-                        >
-                          {
-                            t.openDocument
-                          }{" "}
-                          {"\u2192"}
-                        </a>
-                      )}
-                    </div>
-                  )
-                )}
-              </div>
-            )}
-          </GlassCard>
 
           <GlassCard
             title={
@@ -3794,49 +3386,369 @@ export default function EmployeeDashboardPage() {
         >
           <GlassCard
             title={
-              t.birthdaysToday
+              t.upcomingEvents
             }
-            icon={"\u{1F382}"}
-            accent="#ec4899"
+            subtitle={
+              t.upcomingEventsSubtitle
+            }
+            icon={"\u{1F4C5}"}
+            accent="#3b82f6"
             isMobile={isMobile}
           >
-            {todayBirthdays.length ===
+            {loading ? (
+              <p
+                style={{
+                  margin: 0,
+                  color:
+                    "#94a3b8",
+                }}
+              >
+                {t.loading}
+              </p>
+            ) : dashboardEvents.length ===
+              0 ? (
+              <p
+                style={{
+                  margin: 0,
+                  color:
+                    "#64748b",
+                }}
+              >
+                {t.noEvents}
+              </p>
+            ) : (
+              <div
+                style={{
+                  display: "grid",
+                  gap: 10,
+                }}
+              >
+                {dashboardEvents.map(
+                  (event) => (
+                    <div
+                      key={
+                        event.id
+                      }
+                      style={{
+                        borderRadius:
+                          16,
+                        padding: 13,
+                        background:
+                          "linear-gradient(135deg,#eff6ff 0%,#ffffff 100%)",
+                        border:
+                          "1px solid #dbeafe",
+                      }}
+                    >
+                      <p
+                        style={{
+                          margin: 0,
+                          fontWeight:
+                            900,
+                          fontSize:
+                            14,
+                          color:
+                            "#0f172a",
+                        }}
+                      >
+                        {event.title ||
+                          "Event"}
+                      </p>
+
+                      <p
+                        style={{
+                          margin:
+                            "5px 0 0",
+                          fontSize:
+                            11.5,
+                          color:
+                            "#2563eb",
+                          fontWeight:
+                            750,
+                        }}
+                      >
+                        {formatEventDate(
+                          event.date,
+                          language
+                        )}
+                        {event.time
+                          ? ` \u00B7 ${event.time}`
+                          : ""}
+                      </p>
+
+                      {event.details && (
+                        <p
+                          style={{
+                            margin:
+                              "7px 0 0",
+                            fontSize:
+                              12,
+                            color:
+                              "#475569",
+                            lineHeight:
+                              1.55,
+                            whiteSpace:
+                              "pre-line",
+                          }}
+                        >
+                          {
+                            event.details
+                          }
+                        </p>
+                      )}
+
+                      {event.rsvpEnabled ===
+                        true && (
+                        <EventResponseButtons
+                          event={
+                            event
+                          }
+                          selectedResponse={
+                            eventResponses[
+                              event.id
+                            ] || ""
+                          }
+                          saving={
+                            savingEventResponse ===
+                            event.id
+                          }
+                          language={
+                            language
+                          }
+                          onRespond={
+                            handleEventResponse
+                          }
+                        />
+                      )}
+                    </div>
+                  )
+                )}
+              </div>
+            )}
+          </GlassCard>
+
+          <GlassCard
+            title={
+              t.notices
+            }
+            subtitle={
+              t.noticesSubtitle
+            }
+            icon={"\u{1F4CC}"}
+            accent="#f59e0b"
+            isMobile={isMobile}
+          >
+            {dashboardNotices.length ===
             0 ? (
               <p
                 style={{
                   margin: 0,
                   color:
                     "#64748b",
-                  fontSize:
-                    12.5,
                 }}
               >
-                {t.birthdaysEmptyToday}
+                {t.noNotices}
               </p>
             ) : (
               <div
                 style={{
-                  display:
-                    "grid",
+                  display: "grid",
                   gap: 9,
                 }}
               >
-                {todayBirthdays.map(
-                  (person) => (
-                    <BirthdayRow
+                {dashboardNotices.map(
+                  (item) => (
+                    <div
                       key={
-                        person.id
+                        item.id
                       }
-                      person={
-                        person
+                      style={{
+                        borderRadius:
+                          15,
+                        padding:
+                          12,
+                        background:
+                          "linear-gradient(135deg,#fffbeb 0%,#ffffff 100%)",
+                        border:
+                          "1px solid #fde68a",
+                      }}
+                    >
+                      <p
+                        style={{
+                          margin: 0,
+                          fontWeight:
+                            850,
+                          color:
+                            "#0f172a",
+                          fontSize:
+                            13.5,
+                        }}
+                      >
+                        {item.title ||
+                          "Notice"}
+                      </p>
+
+                      {item.body && (
+                        <p
+                          style={{
+                            margin:
+                              "7px 0 0",
+                            fontSize:
+                              12,
+                            color:
+                              "#475569",
+                            lineHeight:
+                              1.55,
+                            whiteSpace:
+                              "pre-line",
+                          }}
+                        >
+                          {
+                            item.body
+                          }
+                        </p>
+                      )}
+
+                      {item.link && (
+                        <a
+                          href={
+                            item.link
+                          }
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{
+                            display:
+                              "inline-block",
+                            marginTop:
+                              8,
+                            fontSize:
+                              11.5,
+                            fontWeight:
+                              800,
+                            color:
+                              "#b45309",
+                            textDecoration:
+                              "none",
+                          }}
+                        >
+                          {t.viewMore}{" "}
+                          {"\u2192"}
+                        </a>
+                      )}
+                    </div>
+                  )
+                )}
+              </div>
+            )}
+          </GlassCard>
+
+          <GlassCard
+            title={
+              t.operationalDocs
+            }
+            subtitle={
+              t.operationalDocsSubtitle
+            }
+            icon={"\u{1F4C4}"}
+            accent="#10b981"
+            isMobile={isMobile}
+          >
+            {dashboardDocs.length ===
+            0 ? (
+              <p
+                style={{
+                  margin: 0,
+                  color:
+                    "#64748b",
+                }}
+              >
+                {t.noDocs}
+              </p>
+            ) : (
+              <div
+                style={{
+                  display: "grid",
+                  gap: 9,
+                }}
+              >
+                {dashboardDocs.map(
+                  (item) => (
+                    <div
+                      key={
+                        item.id
                       }
-                      language={
-                        language
-                      }
-                      tag={
-                        t.birthdayTodayTag
-                      }
-                    />
+                      style={{
+                        borderRadius:
+                          15,
+                        padding:
+                          12,
+                        background:
+                          "linear-gradient(135deg,#ecfdf5 0%,#ffffff 100%)",
+                        border:
+                          "1px solid #d1fae5",
+                      }}
+                    >
+                      <p
+                        style={{
+                          margin: 0,
+                          fontWeight:
+                            850,
+                          color:
+                            "#0f172a",
+                          fontSize:
+                            13.5,
+                        }}
+                      >
+                        {item.title ||
+                          item.filename ||
+                          "Document"}
+                      </p>
+
+                      {item.filename && (
+                        <p
+                          style={{
+                            margin:
+                              "4px 0 0",
+                            fontSize:
+                              10.5,
+                            color:
+                              "#64748b",
+                          }}
+                        >
+                          {
+                            item.filename
+                          }
+                        </p>
+                      )}
+
+                      {item.url && (
+                        <a
+                          href={
+                            item.url
+                          }
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{
+                            display:
+                              "inline-block",
+                            marginTop:
+                              8,
+                            fontSize:
+                              11.5,
+                            fontWeight:
+                              800,
+                            color:
+                              "#047857",
+                            textDecoration:
+                              "none",
+                          }}
+                        >
+                          {
+                            t.openDocument
+                          }{" "}
+                          {"\u2192"}
+                        </a>
+                      )}
+                    </div>
                   )
                 )}
               </div>
@@ -3903,35 +3815,24 @@ export default function EmployeeDashboardPage() {
 
           <GlassCard
             title={
-              t.wchrTopToday
+              t.birthdaysToday
             }
-            icon={"\u267F"}
-            accent="#0ea5e9"
+            icon={"\u{1F382}"}
+            accent="#ec4899"
             isMobile={isMobile}
           >
-            <p
-              style={{
-                margin:
-                  "0 0 10px",
-                fontSize: 12,
-                color:
-                  "#64748b",
-              }}
-            >
-              {t.topTodaySub}
-            </p>
-
-            {wchrLoading ? (
+            {todayBirthdays.length ===
+            0 ? (
               <p
                 style={{
                   margin: 0,
                   color:
-                    "#94a3b8",
+                    "#64748b",
                   fontSize:
-                    12,
+                    12.5,
                 }}
               >
-                {t.loadingWchr}
+                {t.birthdaysEmptyToday}
               </p>
             ) : (
               <div
@@ -3941,14 +3842,21 @@ export default function EmployeeDashboardPage() {
                   gap: 9,
                 }}
               >
-                {topToday.map(
-                  (row) => (
-                    <LeaderRow
-                      key={`${row.name}-${row.rank}`}
-                      row={
-                        row
+                {todayBirthdays.map(
+                  (person) => (
+                    <BirthdayRow
+                      key={
+                        person.id
                       }
-                      accent="#0ea5e9"
+                      person={
+                        person
+                      }
+                      language={
+                        language
+                      }
+                      tag={
+                        t.birthdayTodayTag
+                      }
                     />
                   )
                 )}
@@ -3956,60 +3864,8 @@ export default function EmployeeDashboardPage() {
             )}
           </GlassCard>
 
-          <GlassCard
-            title={
-              t.wchrTopWeek
-            }
-            icon={"\u{1F4CA}"}
-            accent="#10b981"
-            isMobile={isMobile}
-          >
-            <p
-              style={{
-                margin:
-                  "0 0 10px",
-                fontSize: 12,
-                color:
-                  "#64748b",
-              }}
-            >
-              {t.topWeekSub}
-            </p>
 
-            {wchrLoading ? (
-              <p
-                style={{
-                  margin: 0,
-                  color:
-                    "#94a3b8",
-                  fontSize:
-                    12,
-                }}
-              >
-                {t.loadingWchr}
-              </p>
-            ) : (
-              <div
-                style={{
-                  display:
-                    "grid",
-                  gap: 9,
-                }}
-              >
-                {topWeek.map(
-                  (row) => (
-                    <LeaderRow
-                      key={`${row.name}-${row.rank}`}
-                      row={
-                        row
-                      }
-                      accent="#10b981"
-                    />
-                  )
-                )}
-              </div>
-            )}
-          </GlassCard>
+
         </div>
       </div>
 
