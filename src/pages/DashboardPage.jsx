@@ -563,6 +563,8 @@ export default function DashboardPage() {
   const [blockedEmployees, setBlockedEmployees] = useState([]);
   const [showBlockedList, setShowBlockedList] = useState(false);
   const [pendingSchedules, setPendingSchedules] = useState([]);
+  const [publishedSchedules, setPublishedSchedules] = useState([]);
+  const [scheduleSlides, setScheduleSlides] = useState({});
   const [photos, setPhotos] = useState([]);
   const [pendingTimesheets, setPendingTimesheets] = useState([]);
   const [employeesOfMonth, setEmployeesOfMonth] = useState([]);
@@ -868,6 +870,28 @@ export default function DashboardPage() {
     }
   };
 
+  const fetchPublishedSchedules = async () => {
+    try {
+      const [approved, notifications] = await Promise.all([
+        getDocs(query(collection(db, "schedules"), where("status", "==", "approved"))),
+        getDocs(collection(db, "schedule_notification_batches")),
+      ]);
+      const releases = notifications.docs.map(d => d.data()).filter(b =>
+        b.type === "approved_schedule" &&
+        ["SENT", "SKIPPED_ALREADY_SENT", "NO_DELIVERY"].includes(b.status) &&
+        Array.isArray(b.scheduleIds) && b.scheduleIds.length
+      );
+      const releasedIds = new Set(releases.flatMap(b => b.scheduleIds.map(String)));
+      setPublishedSchedules(approved.docs
+        .filter(d => releasedIds.has(d.id))
+        .map(d => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => String(b.weekStart || b.weekTag || "").localeCompare(String(a.weekStart || a.weekTag || ""))));
+    } catch (error) {
+      console.error("Could not load published department schedules", error);
+      setPublishedSchedules([]);
+    }
+  };
+
   const fetchPhotos = async () => {
     setLoadingPhotos(true);
 
@@ -975,6 +999,7 @@ export default function DashboardPage() {
     fetchNotices();
     fetchBlockedEmployees();
     fetchPendingSchedules();
+    fetchPublishedSchedules();
     fetchPhotos();
     fetchPendingTimesheets();
   };
@@ -2112,6 +2137,46 @@ export default function DashboardPage() {
                   </div>
                 )}
               </>
+            )}
+          </GlassCard>
+
+          <GlassCard
+            title="Published Department Schedules"
+            icon={"📅"}
+            accent="#1769aa"
+            isMobile={isMobile}
+            action={<button type="button" onClick={fetchPublishedSchedules} style={{ border: "1px solid #cbd5e1", borderRadius: 8, background: "white", padding: "7px 12px", cursor: "pointer" }}>Refresh</button>}
+          >
+            {publishedSchedules.length === 0 ? (
+              <p style={{ color: "#64748b" }}>No approved schedules have been released through Notify Employees yet.</p>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fit, minmax(260px, 1fr))", gap: 14 }}>
+                {Object.entries(publishedSchedules.reduce((groups, schedule) => {
+                  const dept = String(schedule.department || schedule.airline || "Other Department").trim();
+                  (groups[dept] ||= []).push(schedule);
+                  return groups;
+                }, {})).map(([department, schedules]) => {
+                  const index = (scheduleSlides[department] || 0) % schedules.length;
+                  const schedule = schedules[index];
+                  return (
+                    <div key={department} style={{ border: "1px solid #dbeafe", borderRadius: 15, padding: 14, background: "#f8fbff" }}>
+                      <div style={{ fontWeight: 850, fontSize: 16, marginBottom: 6 }}>{department}</div>
+                      <button type="button" aria-label={`View next ${department} schedule`} title="Click to view next schedule" onClick={() => setScheduleSlides(old => ({ ...old, [department]: (index + 1) % schedules.length }))} style={{ width: "100%", border: "1px solid #dbeafe", background: "white", borderRadius: 12, padding: 16, cursor: "pointer", textAlign: "left", color: "#0f172a" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                          <span style={{ fontSize: 32 }} aria-hidden="true">📋</span>
+                          <div>
+                            <div style={{ fontWeight: 800 }}>{schedule.airline || department}</div>
+                            <div style={{ fontSize: 12, color: "#64748b" }}>Week: {schedule.weekStart || schedule.weekTag || "—"}</div>
+                          </div>
+                        </div>
+                        <div style={{ marginTop: 10, fontSize: 12, color: "#475569" }}>{schedule.name || schedule.title || "Approved department schedule"}</div>
+                        <div style={{ marginTop: 12, fontSize: 12, color: "#1769aa", fontWeight: 700 }}>Tap to view next · {index + 1} / {schedules.length}</div>
+                      </button>
+                      <button type="button" onClick={() => navigate(`/approved/${schedule.id}`)} style={{ marginTop: 10, border: 0, background: "transparent", color: "#1769aa", cursor: "pointer", fontWeight: 700 }}>Open full schedule →</button>
+                    </div>
+                  );
+                })}
+              </div>
             )}
           </GlassCard>
 
