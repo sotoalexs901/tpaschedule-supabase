@@ -16,3 +16,7 @@
 # It does NOT make additional Flightradar24 API calls.
 [functions."arrival-readiness-sync-scheduled"]
   schedule = "*/5 * * * *"
+
+# Hourly UTC; function runs only on the 10th/16th after 9 AM Eastern.
+[functions."monthly-report-compliance-scheduled"]
+  schedule = "0 * * * *"
