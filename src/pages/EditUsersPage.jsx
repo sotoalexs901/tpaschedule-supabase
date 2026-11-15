@@ -1128,6 +1128,8 @@ export default function EditUsersPage() {
               onReset={resetPin}
               onDelete={deleteUser}
               onApplySuggestion={applySuggestion}
+              onSendInvitation={sendEmailInvitation}
+              canInvite={user?.role === "station_manager"}
             />
           ))}
 
