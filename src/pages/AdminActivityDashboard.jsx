@@ -9,7 +9,7 @@ import {
 } from "firebase/firestore";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
-import { db } from "../firebase";
+import { db, auth } from "../firebase";
 import {
   APP_NAME,
   APP_SUBTITLE,
@@ -473,6 +473,10 @@ function medalLabel(index) {
 export default function AdminActivityDashboard() {
   const [users, setUsers] = useState([]);
   const [presence, setPresence] = useState([]);
+  const [accountStatuses, setAccountStatuses] = useState([]);
+  const [accountStatusError, setAccountStatusError] = useState("");
+  const [accountSearch, setAccountSearch] = useState("");
+  const [accountFilter, setAccountFilter] = useState("all");
   const [reports, setReports] = useState([]);
 
   const [activeTab, setActiveTab] = useState("overview");
@@ -514,6 +518,23 @@ export default function AdminActivityDashboard() {
       unsubPresence();
       unsubReports();
     };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const current = auth.currentUser;
+        if (!current) { if (!cancelled) setAccountStatusError("Sign in with your verified manager email to see activation details."); return; }
+        const token = await current.getIdToken();
+        const response = await fetch("/.netlify/functions/employee-account-activity", { headers: { Authorization: "Bearer " + token } });
+        const data = await response.json();
+        if (!response.ok) throw Error(data.error || "Could not load account statuses");
+        if (!cancelled) { setAccountStatuses(data.accounts || []); setAccountStatusError(""); }
+      } catch (err) { if (!cancelled) setAccountStatusError(err.message || "Account status unavailable"); }
+    };
+    load();
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
@@ -581,6 +602,32 @@ export default function AdminActivityDashboard() {
       })
       .sort((a, b) => String(a.username).localeCompare(String(b.username)));
   }, [users, presence]);
+
+  const accountRows = useMemo(() => {
+    const statusMap = new Map(accountStatuses.map(s => [s.userId, s]));
+    return mergedUsers.map(u => {
+      const status = statusMap.get(u.id) || {};
+      const used = Boolean(u.lastLoginAt || u.firstLoginAt || Number(u.loginCount) > 0);
+      const verified = Boolean(status.emailVerified);
+      const invited = status.invitationStatus === "sent" || status.invitationStatus === "activated";
+      return { ...u, ...status, used, verified, invited };
+    });
+  }, [mergedUsers, accountStatuses]);
+  const accountCounts = useMemo(() => ({
+    total: accountRows.length,
+    invited: accountRows.filter(u => u.invited).length,
+    activated: accountRows.filter(u => u.verified).length,
+    accessed: accountRows.filter(u => u.used).length,
+  }), [accountRows]);
+  const visibleAccountRows = useMemo(() => accountRows.filter(u => {
+    const needle = accountSearch.trim().toLowerCase();
+    if (needle && ![u.username, u.displayName, u.email, u.role].some(v => String(v || "").toLowerCase().includes(needle))) return false;
+    if (accountFilter === "sent") return u.invited && !u.verified;
+    if (accountFilter === "activated") return u.verified;
+    if (accountFilter === "accessed") return u.used;
+    if (accountFilter === "not_sent") return !u.invited && !u.verified;
+    return true;
+  }), [accountRows, accountSearch, accountFilter]);
 
   const loginOptions = useMemo(() => {
     const set = new Set();
@@ -1464,6 +1511,40 @@ export default function AdminActivityDashboard() {
 
       {activeTab === "user_activity" && (
         <>
+          <Panel title="Employee Invitations & Account Activation">
+            {accountStatusError && <InfoBox text={accountStatusError} />}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(145px, 1fr))", gap: 12, marginBottom: 14 }}>
+              <StatCard label="Total Users" value={accountCounts.total} />
+              <StatCard label="Invitations Sent" value={accountStatusError ? "—" : accountCounts.invited} />
+              <StatCard label="Verified Accounts" value={accountStatusError ? "—" : accountCounts.activated} />
+              <StatCard label="Users Logged In" value={accountCounts.accessed} />
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
+              <input aria-label="Search employee accounts" placeholder="Search employee, email or role" value={accountSearch} onChange={e => setAccountSearch(e.target.value)} style={{ padding: 10, border: "1px solid #cbd5e1", borderRadius: 9, flex: "1 1 210px", minWidth: 0 }} />
+              <select aria-label="Filter activation status" value={accountFilter} onChange={e => setAccountFilter(e.target.value)} style={{ padding: 10, border: "1px solid #cbd5e1", borderRadius: 9 }}>
+                <option value="all">All accounts</option><option value="sent">Invitation pending</option><option value="activated">Email verified</option><option value="accessed">Has logged in</option><option value="not_sent">Not invited</option>
+              </select>
+            </div>
+            <div style={tableWrapStyle}>
+              <table style={{ ...tableStyle, minWidth: 900 }}>
+                <thead><tr><th style={th}>Employee</th><th style={th}>Role</th><th style={th}>Invitation</th><th style={th}>Sent At</th><th style={th}>Activation</th><th style={th}>First Login</th><th style={th}>Last Login</th><th style={th}>Sessions</th></tr></thead>
+                <tbody>{visibleAccountRows.map(u => (
+                  <tr key={u.id}>
+                    <td style={td}><UserIdentity user={u} /></td>
+                    <td style={td}>{normalizeRole(u.role)}</td>
+                    <td style={td}>{accountStatusError ? "Unavailable" : u.invitationStatus === "sent" ? "Sent" : u.invitationStatus === "activated" ? "Activated" : u.invitationStatus === "delivery_failed" ? "Delivery failed" : "Not sent"}</td>
+                    <td style={td}>{u.sentAt ? formatDate(u.sentAt) : "—"}</td>
+                    <td style={td}>{accountStatusError ? "Unavailable" : u.verified ? "Verified" : u.authLinked ? "Awaiting verification" : "Not activated"}</td>
+                    <td style={td}>{formatDate(u.firstLoginAt)}</td>
+                    <td style={td}>{formatDate(u.lastLoginAt)}</td>
+                    <td style={td}>{getLoginCount(u)}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+            <div style={{ color: "#64748b", fontSize: 12, marginTop: 10 }}>Invitation Sent means the email provider accepted the message, not that it was opened. Verified means the Firebase email is confirmed. Login metrics are collected by the existing presence tracker and include legacy PIN sessions.</div>
+          </Panel>
+
           <div
             style={{
               display: "grid",
