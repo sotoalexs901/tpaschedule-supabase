@@ -55,18 +55,15 @@ exports.handler = async event => {
       const sender = process.env.AEROSTATION_INVITE_FROM;
       if (!process.env.RESEND_API_KEY || !sender) return reply(503, { error: "Invitation email service not configured" });
       const name = String(employee.displayName || employee.username || "Team member").slice(0, 120);
+      const inviteRef = store.collection("employeeEmailInvites").doc(userId);
+      await inviteRef.set({ userId, email: newEmail, tokenHash: digest(key), expiresAt: admin.firestore.Timestamp.fromMillis(expiresAt), status: "pending_delivery", sentBy: managerDocs.docs[0].id, createdAt: admin.firestore.FieldValue.serverTimestamp() });
       const res = await fetch("https://api.resend.com/emails", {
         method: "POST",
         headers: { Authorization: "Bearer " + process.env.RESEND_API_KEY, "Content-Type": "application/json" },
         body: JSON.stringify({ from: sender, to: [newEmail], subject: "AeroStation Hub - Set your account password", html: '<p>Hello ' + name.replace(/[&<>"]/g, "") + ',</p><p>Your Station Manager has invited you to activate your AeroStation Hub email login.</p><p><a href="' + url + '">Set your password and activate</a></p><p>This link expires in 24 hours. If you did not expect this message, contact station management.</p>' })
       });
-      if (!res.ok) { console.error("Resend invitation failure", res.status); return reply(502, { error: "Email delivery service rejected the invitation" }); }
-      await store.collection("employeeEmailInvites").doc(userId).set({
-        userId, email: newEmail, tokenHash: digest(key),
-        expiresAt: admin.firestore.Timestamp.fromMillis(expiresAt),
-        status: "sent", sentAt: admin.firestore.FieldValue.serverTimestamp(),
-        sentBy: managerDocs.docs[0].id
-      });
+      if (!res.ok) { console.error("Resend invitation failure", res.status); await inviteRef.update({ status: "delivery_failed", tokenHash: admin.firestore.FieldValue.delete() }); return reply(502, { error: "Email delivery service rejected the invitation" }); }
+      await inviteRef.update({ status: "sent", sentAt: admin.firestore.FieldValue.serverTimestamp() });
       return reply(200, { status: "sent", email: newEmail });
     }
     if (action === "activate") {
