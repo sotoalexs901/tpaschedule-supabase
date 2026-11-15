@@ -243,6 +243,7 @@ export default function ProfilePage() {
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
   const [emailLocked, setEmailLocked] = useState(false);
+  const [savedEmail, setSavedEmail] = useState("");
   const [position, setPosition] = useState("");
   const [birthdayMonth, setBirthdayMonth] = useState("");
   const [birthdayDay, setBirthdayDay] = useState("");
@@ -302,6 +303,7 @@ export default function ProfilePage() {
 
           setUsername(data.username || data.loginUsername || user.username || "");
           setEmail(data.email || "");
+          setSavedEmail(String(data.email || "").trim().toLowerCase());
           setEmailLocked(Boolean(String(data.email || "").trim()));
           setDisplayName(
             data.displayName ||
@@ -333,6 +335,7 @@ export default function ProfilePage() {
         } else {
           setUsername(user.username || "");
           setEmail(user.email || "");
+          setSavedEmail(String(user.email || "").trim().toLowerCase());
           setEmailLocked(Boolean(String(user.email || "").trim()));
           setDisplayName(user.displayName || "");
           setPosition(user.position || getDefaultPosition(user.role));
@@ -424,7 +427,7 @@ export default function ProfilePage() {
     }
 
     const normalizedEmail = email.trim().toLowerCase();
-    if (emailLocked && normalizedEmail !== String(user.email || "").trim().toLowerCase()) {
+    if (emailLocked && normalizedEmail !== savedEmail) {
       setError("To change your saved email address, please contact your Station Manager.");
       return;
     }
@@ -538,6 +541,7 @@ export default function ProfilePage() {
       }
 
       if (normalizedEmail) setEmailLocked(true);
+      setSavedEmail(normalizedEmail);
       setStoredPhotoURL(finalPhotoURL);
       setPhotoFile(null);
 
