@@ -1261,6 +1261,74 @@ export default function DashboardPage() {
           gap: isMobile ? 10 : 16,
         }}
       >
+        <div style={{ gridColumn: "1 / -1", minWidth: 0 }}>
+          <GlassCard
+            title="Weekly Department Schedules"
+            icon={"📅"}
+            accent="#1769aa"
+            isMobile={isMobile}
+            action={<button type="button" onClick={fetchPublishedSchedules} style={{ border: "1px solid #cbd5e1", borderRadius: 8, background: "white", padding: "6px 10px", cursor: "pointer" }}>Refresh</button>}
+          >
+            {publishedSchedules.length === 0 ? (
+              <p style={{ color: "#64748b", margin: 0 }}>No released schedules available.</p>
+            ) : (() => {
+              const departments = Object.entries(publishedSchedules.reduce((groups, schedule) => {
+                const department = String(schedule.department || schedule.airline || "Other Department").trim();
+                (groups[department] ||= []).push(schedule);
+                return groups;
+              }, {}));
+              const index = (scheduleSlides.all || 0) % departments.length;
+              const [department, schedules] = departments[index];
+              const latest = schedules[0];
+              const imageUrl = latest.imageUrl || latest.imageURL || latest.photoURL || latest.scheduleImageUrl || "";
+              const next = () => setScheduleSlides(prev => ({ ...prev, all: (index + 1) % departments.length }));
+              return (
+                <div style={{ width: "100%", maxWidth: "100%", margin: "0 auto" }}>
+                  <button type="button" onClick={next} aria-label="View next department schedule" style={{ display: "block", width: "100%", padding: 0, background: "#f8fafc", border: "1px solid #dbeafe", borderRadius: 12, overflow: "hidden", cursor: "pointer", color: "#0f172a" }}>
+                    {imageUrl ? (
+                      <img src={imageUrl} alt={department + " approved weekly schedule"} style={{ width: "100%", maxHeight: 540, objectFit: "contain", display: "block" }} />
+                    ) : Array.isArray(latest.grid) && latest.grid.length ? (
+                      <div style={{ padding: 8, textAlign: "left" }}>
+                        <div style={{ fontWeight: 800, fontSize: 12, padding: "4px 2px 8px" }}>{department} · {latest.weekStart || latest.weekTag || "Weekly roster"}</div>
+                        <div style={{ overflow: "hidden", borderRadius: 6, border: "1px solid #dbeafe" }}>
+                          <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed", fontSize: 13 }}>
+                            <thead><tr style={{ background: "#dbeafe" }}><th style={{ padding: 4, textAlign: "left", width: "26%" }}>EMP</th>{["MON","TUE","WED","THU","FRI","SAT","SUN"].map(day => <th key={day} style={{ padding: 3 }}>{day}</th>)}</tr></thead>
+                            <tbody>{latest.grid.slice(0, 16).map((row, ri) => (
+                              <tr key={row.employeeId || ri} style={{ background: ri % 2 ? "#f8fafc" : "#fff" }}>
+                                <td style={{ padding: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 700 }}>{(() => {
+                                  const employee = scheduleEmployees.find(e => String(e.id) === String(row.employeeId) || String(e.employeeId || "") === String(row.employeeId));
+                                  return employee?.name || employee?.fullName || employee?.employeeName || row.name || row.employeeName || row.fullName || "Employee";
+                                })()}</td>
+                                {["mon","tue","wed","thu","fri","sat","sun"].map(day => {
+                                  const shifts = Array.isArray(row[day]) ? row[day] : [];
+                                  const label = shifts.filter(s => s?.start && s.start !== "OFF").map(s => s.end ? `${s.start}–${s.end}` : s.start).join(", ") || "OFF";
+                                  return <td key={day} style={{ textAlign: "center", padding: 3, borderLeft: "1px solid #e2e8f0", overflow: "hidden", textOverflow: "clip" }}>{label}</td>;
+                                })}
+                              </tr>
+                            ))}</tbody>
+                          </table>
+                        </div>
+                        {latest.grid.length > 16 && <div style={{ fontSize: 10, color: "#64748b", marginTop: 5 }}>+{latest.grid.length - 16} more employees · Open full schedule to see all</div>}
+                      </div>
+                    ) : (
+                      <div style={{ minHeight: 100, display: "flex", alignItems: "center", justifyContent: "center", gap: 12, padding: 12 }}>
+                        <span style={{ fontSize: 30 }}>📋</span>
+                        <div style={{ textAlign: "left" }}><strong>{department}</strong><div style={{ fontSize: 12, color: "#64748b" }}>Week {latest.weekStart || latest.weekTag || "—"}</div><div style={{ fontSize: 11, marginTop: 4 }}>Tap for next department</div></div>
+                      </div>
+                    )}
+                  </button>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginTop: 8, fontSize: 12 }}>
+                    <button type="button" onClick={() => setScheduleSlides(prev => ({ ...prev, all: (index - 1 + departments.length) % departments.length }))} style={{ border: 0, background: "transparent", cursor: "pointer", color: "#1769aa" }}>← Previous</button>
+                    <span style={{ fontWeight: 750 }}>{department} · {index + 1} / {departments.length}</span>
+                    <button type="button" onClick={next} style={{ border: 0, background: "transparent", cursor: "pointer", color: "#1769aa" }}>Next →</button>
+                  </div>
+                  <div style={{ textAlign: "center", marginTop: 6 }}><button type="button" onClick={() => navigate(`/approved/${latest.id}`)} style={{ border: 0, background: "transparent", cursor: "pointer", color: "#1769aa", fontSize: 12 }}>Open full schedule</button></div>
+                </div>
+              );
+            })()}
+          </GlassCard>
+        </div>
+
         <div
           style={{
             display: "grid",
@@ -2142,72 +2210,6 @@ export default function DashboardPage() {
                 )}
               </>
             )}
-          </GlassCard>
-
-          <GlassCard
-            title="Weekly Department Schedules"
-            icon={"📅"}
-            accent="#1769aa"
-            isMobile={isMobile}
-            action={<button type="button" onClick={fetchPublishedSchedules} style={{ border: "1px solid #cbd5e1", borderRadius: 8, background: "white", padding: "6px 10px", cursor: "pointer" }}>Refresh</button>}
-          >
-            {publishedSchedules.length === 0 ? (
-              <p style={{ color: "#64748b", margin: 0 }}>No released schedules available.</p>
-            ) : (() => {
-              const departments = Object.entries(publishedSchedules.reduce((groups, schedule) => {
-                const department = String(schedule.department || schedule.airline || "Other Department").trim();
-                (groups[department] ||= []).push(schedule);
-                return groups;
-              }, {}));
-              const index = (scheduleSlides.all || 0) % departments.length;
-              const [department, schedules] = departments[index];
-              const latest = schedules[0];
-              const imageUrl = latest.imageUrl || latest.imageURL || latest.photoURL || latest.scheduleImageUrl || "";
-              const next = () => setScheduleSlides(prev => ({ ...prev, all: (index + 1) % departments.length }));
-              return (
-                <div style={{ maxWidth: 610, margin: "0 auto" }}>
-                  <button type="button" onClick={next} aria-label="View next department schedule" style={{ display: "block", width: "100%", padding: 0, background: "#f8fafc", border: "1px solid #dbeafe", borderRadius: 12, overflow: "hidden", cursor: "pointer", color: "#0f172a" }}>
-                    {imageUrl ? (
-                      <img src={imageUrl} alt={department + " approved weekly schedule"} style={{ width: "100%", maxHeight: 320, objectFit: "contain", display: "block" }} />
-                    ) : Array.isArray(latest.grid) && latest.grid.length ? (
-                      <div style={{ padding: 8, textAlign: "left" }}>
-                        <div style={{ fontWeight: 800, fontSize: 12, padding: "4px 2px 8px" }}>{department} · {latest.weekStart || latest.weekTag || "Weekly roster"}</div>
-                        <div style={{ overflow: "hidden", borderRadius: 6, border: "1px solid #dbeafe" }}>
-                          <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed", fontSize: 10 }}>
-                            <thead><tr style={{ background: "#dbeafe" }}><th style={{ padding: 4, textAlign: "left", width: "26%" }}>EMP</th>{["MON","TUE","WED","THU","FRI","SAT","SUN"].map(day => <th key={day} style={{ padding: 3 }}>{day}</th>)}</tr></thead>
-                            <tbody>{latest.grid.slice(0, 9).map((row, ri) => (
-                              <tr key={row.employeeId || ri} style={{ background: ri % 2 ? "#f8fafc" : "#fff" }}>
-                                <td style={{ padding: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 700 }}>{(() => {
-                                  const employee = scheduleEmployees.find(e => String(e.id) === String(row.employeeId) || String(e.employeeId || "") === String(row.employeeId));
-                                  return employee?.name || employee?.fullName || employee?.employeeName || row.name || row.employeeName || row.fullName || "Employee";
-                                })()}</td>
-                                {["mon","tue","wed","thu","fri","sat","sun"].map(day => {
-                                  const shifts = Array.isArray(row[day]) ? row[day] : [];
-                                  const label = shifts.filter(s => s?.start && s.start !== "OFF").map(s => s.start).join(", ") || "OFF";
-                                  return <td key={day} style={{ textAlign: "center", padding: 3, borderLeft: "1px solid #e2e8f0", overflow: "hidden", textOverflow: "clip" }}>{label}</td>;
-                                })}
-                              </tr>
-                            ))}</tbody>
-                          </table>
-                        </div>
-                        {latest.grid.length > 9 && <div style={{ fontSize: 10, color: "#64748b", marginTop: 5 }}>+{latest.grid.length - 9} more employees · Open full schedule to see all</div>}
-                      </div>
-                    ) : (
-                      <div style={{ minHeight: 100, display: "flex", alignItems: "center", justifyContent: "center", gap: 12, padding: 12 }}>
-                        <span style={{ fontSize: 30 }}>📋</span>
-                        <div style={{ textAlign: "left" }}><strong>{department}</strong><div style={{ fontSize: 12, color: "#64748b" }}>Week {latest.weekStart || latest.weekTag || "—"}</div><div style={{ fontSize: 11, marginTop: 4 }}>Tap for next department</div></div>
-                      </div>
-                    )}
-                  </button>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginTop: 8, fontSize: 12 }}>
-                    <button type="button" onClick={() => setScheduleSlides(prev => ({ ...prev, all: (index - 1 + departments.length) % departments.length }))} style={{ border: 0, background: "transparent", cursor: "pointer", color: "#1769aa" }}>← Previous</button>
-                    <span style={{ fontWeight: 750 }}>{department} · {index + 1} / {departments.length}</span>
-                    <button type="button" onClick={next} style={{ border: 0, background: "transparent", cursor: "pointer", color: "#1769aa" }}>Next →</button>
-                  </div>
-                  <div style={{ textAlign: "center", marginTop: 6 }}><button type="button" onClick={() => navigate(`/approved/${latest.id}`)} style={{ border: 0, background: "transparent", cursor: "pointer", color: "#1769aa", fontSize: 12 }}>Open full schedule</button></div>
-                </div>
-              );
-            })()}
           </GlassCard>
 
           <GlassCard
