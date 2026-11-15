@@ -1464,8 +1464,8 @@ export default function ApprovedSchedulesPage() {
         headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
         body: JSON.stringify({ weekStart: normalizedWeek, scheduleIds: list.map(item => item.id) }),
       });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "Unable to delete schedules");
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || `Server returned ${response.status}. Please retry or contact support.`);
       await load();
       setStatusMessage(`Deleted ${result.deleted} approved schedule(s) for ${normalizedWeek}. Audit backup: ${result.auditId}.`);
     } catch (error) {
