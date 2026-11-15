@@ -8,7 +8,7 @@ import {
   query,
   where,
 } from "firebase/firestore";
-import { db } from "../firebase";
+import { db, auth } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 import {
   sendApprovedScheduleNotifications,
@@ -1089,6 +1089,7 @@ export default function ApprovedSchedulesPage() {
 
   const [distributionModal, setDistributionModal] =
     useState(null);
+  const [deletingWeek, setDeletingWeek] = useState("");
 
   const canDistribute =
     normalizeText(
@@ -1442,6 +1443,38 @@ export default function ApprovedSchedulesPage() {
       [groups]
     );
 
+  const handleDeleteWeek = async (weekTag, list) => {
+    if (!canDistribute || deletingWeek || !list.length) return;
+    const normalizedWeek = normalizeDateString(weekTag);
+    if (!normalizedWeek) {
+      setStatusMessage("This week has no valid start date and cannot be bulk deleted.");
+      return;
+    }
+    const confirmation = window.prompt(
+      `Delete ALL ${list.length} approved schedule(s) for week ${normalizedWeek}? This will remove them from Approved Schedules, Dashboard and My Schedule. Type DELETE to confirm.`
+    );
+    if (confirmation !== "DELETE") return;
+    setDeletingWeek(weekTag);
+    try {
+      const current = auth.currentUser;
+      if (!current) throw new Error("Please sign in using your verified manager email.");
+      const token = await current.getIdToken();
+      const response = await fetch("/.netlify/functions/delete-approved-schedules-week", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+        body: JSON.stringify({ weekStart: normalizedWeek, scheduleIds: list.map(item => item.id) }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Unable to delete schedules");
+      await load();
+      setStatusMessage(`Deleted ${result.deleted} approved schedule(s) for ${normalizedWeek}. Audit backup: ${result.auditId}.`);
+    } catch (error) {
+      setStatusMessage(error.message || "Unable to delete approved schedules.");
+    } finally {
+      setDeletingWeek("");
+    }
+  };
+
   const handleOpen =
     (id) => {
       navigate(
@@ -1724,6 +1757,17 @@ export default function ApprovedSchedulesPage() {
                         : ""}{" "}
                       approved for this week.
                     </p>
+
+                    {canDistribute && (
+                      <button
+                        type="button"
+                        disabled={Boolean(deletingWeek)}
+                        onClick={() => handleDeleteWeek(weekTag, list)}
+                        style={{ marginTop: 12, border: "1px solid #fecaca", color: "#b91c1c", background: "#fff1f2", borderRadius: 9, padding: "8px 12px", fontWeight: 700, cursor: deletingWeek ? "wait" : "pointer" }}
+                      >
+                        {deletingWeek === weekTag ? "Deleting..." : `Delete all ${list.length} schedules for this week`}
+                      </button>
+                    )}
 
                     {canDistribute && (
                       <div
