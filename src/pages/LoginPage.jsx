@@ -558,7 +558,7 @@ export default function LoginPage() {
             {pilotEnabled && (
               <button type="button" onClick={() => { setEmailPilotMode((v) => !v); setError(""); setUsername(""); }}
                 disabled={loading} style={{ marginBottom: 12 }}>
-                {emailPilotMode ? "Use username and PIN" : "Try email sign-in (pilot)"}
+                {emailPilotMode ? "Use username and PIN" : "Sign in with email and password"}
               </button>
             )}
 
