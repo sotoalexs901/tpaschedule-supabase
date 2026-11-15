@@ -1818,8 +1818,9 @@ export default function MonthlyEmployeePerformanceReportPage() {
     // Late-submission acknowledgement is informational and does not block reporting.
     const reportKind = form.reviewTargetType === "supervisor" ? "SPR" : "EPR";
     const dueDay = reportKind === "SPR" ? 9 : 15;
-    const tampaToday = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
-    const [todayYear, todayMonth, todayDay] = tampaToday.split("-").map(Number);
+    const tampaParts = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
+    const tampaDate = Object.fromEntries(tampaParts.map(part => [part.type, Number(part.value)]));
+    const todayYear = tampaDate.year, todayMonth = tampaDate.month, todayDay = tampaDate.day;
     const [reportYear, reportMonth] = String(form.month || "").split("-").map(Number);
     const isLate = reportYear < todayYear || (reportYear === todayYear && (reportMonth < todayMonth || (reportMonth === todayMonth && todayDay > dueDay)));
     if (isLate && !window.confirm(`LATE ${reportKind} SUBMISSION\\n\\nThe monthly ${reportKind} deadline is day ${dueDay}. This report is being submitted after the deadline. Late submissions may be reviewed by Station Management and may result in corrective or disciplinary action under applicable Eulen policies.\\n\\nPress OK to acknowledge and submit, or Cancel to review your report.`)) return;
