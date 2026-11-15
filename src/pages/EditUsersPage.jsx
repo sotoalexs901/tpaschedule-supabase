@@ -6,7 +6,7 @@ import {
   deleteDoc,
   doc,
 } from "firebase/firestore";
-import { db } from "../firebase";
+import { auth, db } from "../firebase";
 import { useUser } from "../UserContext.jsx";
 import { APP_NAME } from "../config/appConfig.js";
 
@@ -465,6 +465,14 @@ function MobileUserCard({
         </div>
 
         <div>
+          <div style={mobileLabelStyle}>Email Address</div>
+          <TextInput type="email" value={userRecord.email || ""} placeholder="Employee email"
+            onChange={(e) => onChange(userRecord.id, "email", e.target.value)} />
+        </div>
+
+        {user?.role === "station_manager" && <ActionButton variant="soft" disabled={savingId === userRecord.id}
+          onClick={() => sendEmailInvitation(userRecord)}>Send Email Invitation</ActionButton>}
+        <div>
           <div style={mobileLabelStyle}>Username</div>
           <TextInput
             value={userRecord.username || ""}
@@ -584,6 +592,7 @@ export default function EditUsersPage() {
         const loadedUsers = usersSnap.docs.map((d) => ({
           id: d.id,
           ...d.data(),
+          __originalEmail: d.data().email || "",
         }));
 
         const loadedEmployees = employeesSnap.docs
@@ -646,6 +655,7 @@ export default function EditUsersPage() {
       const employee = userRecord.__matchedEmployee;
       const haystack = [
         userRecord.username,
+        userRecord.email,
         userRecord.role,
         getVisibleUserName(userRecord),
         employee ? getVisibleEmployeeName(employee) : "",
@@ -667,6 +677,37 @@ export default function EditUsersPage() {
 
   const unlinkedCount = enrichedUsers.length - linkedCount;
 
+  const sendEmailInvitation = async (record) => {
+    if (user?.role !== "station_manager") {
+      setStatus("Only the Station Manager can send invitations.");
+      return;
+    }
+    const email = normalizeLower(record.email);
+    if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) {
+      setStatus("Enter a valid employee email first.");
+      return;
+    }
+    if (!window.confirm(`Send an account activation invitation to ${email}?`)) return;
+    const current = auth.currentUser;
+    if (!current) {
+      setStatus("For security, sign in using your verified Firebase email account before sending invitations.");
+      return;
+    }
+    try {
+      setSavingId(record.id);
+      const token = await current.getIdToken();
+      const response = await fetch("/.netlify/functions/employee-email-invite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ action: "send", userId: record.id, email })
+      });
+      const data = await response.json();
+      if (!response.ok) throw Error(data.error || "Invitation failed");
+      setStatus(`Invitation sent to ${email}. The existing profile remains unchanged until activation.`);
+    } catch (err) { setStatus(err.message || "Could not send invitation."); }
+    finally { setSavingId(null); }
+  };
+
   const updateUser = async (userRecord) => {
     try {
       setSavingId(userRecord.id);
@@ -676,7 +717,17 @@ export default function EditUsersPage() {
         (employee) => employee.id === userRecord.employeeId
       );
 
+      const normalizedEmail = normalizeLower(userRecord.email);
+      if (normalizedEmail !== normalizeLower(userRecord.__originalEmail)) {
+        setStatus("Email changes must use Send Invitation. The current email stays active until the employee completes activation.");
+        return;
+      }
+      if (normalizedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+        setStatus("Enter a valid email address.");
+        return;
+      }
       const payload = {
+        email: normalizeLower(userRecord.__originalEmail),
         username: normalizeText(userRecord.username),
         pin: normalizeText(userRecord.pin),
         role: userRecord.role || "agent",
@@ -1125,6 +1176,7 @@ export default function EditUsersPage() {
                 <tr style={{ background: "#f8fbff" }}>
                   <th style={thStyle({ minWidth: 240 })}>Employee Profile</th>
                   <th style={thStyle({ minWidth: 230 })}>Link Profile</th>
+                  <th style={thStyle({ minWidth: 220 })}>Email</th>
                   <th style={thStyle({ minWidth: 210 })}>Username</th>
                   <th style={thStyle({ minWidth: 150 })}>PIN</th>
                   <th style={thStyle({ minWidth: 170 })}>Role</th>
@@ -1166,6 +1218,14 @@ export default function EditUsersPage() {
                             </option>
                           ))}
                         </SelectInput>
+                      </td>
+
+                      <td style={tdStyle}>
+                        <TextInput type="email" aria-label="Employee email"
+                          value={userRecord.email || ""}
+                          placeholder="Employee email"
+                          onChange={(e) => handleChange(userRecord.id, "email", e.target.value)}
+                          style={{ fontSize: 13 }} />
                       </td>
 
                       <td style={tdStyle}>
@@ -1238,6 +1298,10 @@ export default function EditUsersPage() {
                       </td>
 
                       <td style={{ ...tdStyle, textAlign: "center" }}>
+                        {user?.role === "station_manager" && <div style={{ marginBottom: 8 }}>
+                          <ActionButton variant="soft" disabled={savingId === userRecord.id}
+                            onClick={() => sendEmailInvitation(userRecord)}>Send Invitation</ActionButton>
+                        </div>}
                         <ActionButton
                           onClick={() => updateUser(userRecord)}
                           disabled={savingId === userRecord.id}

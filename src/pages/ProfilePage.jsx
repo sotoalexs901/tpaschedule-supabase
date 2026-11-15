@@ -241,6 +241,9 @@ export default function ProfilePage() {
 
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
+  const [email, setEmail] = useState("");
+  const [emailLocked, setEmailLocked] = useState(false);
+  const [savedEmail, setSavedEmail] = useState("");
   const [position, setPosition] = useState("");
   const [birthdayMonth, setBirthdayMonth] = useState("");
   const [birthdayDay, setBirthdayDay] = useState("");
@@ -299,6 +302,9 @@ export default function ProfilePage() {
           const data = snap.data();
 
           setUsername(data.username || data.loginUsername || user.username || "");
+          setEmail(data.email || "");
+          setSavedEmail(String(data.email || "").trim().toLowerCase());
+          setEmailLocked(Boolean(String(data.email || "").trim()));
           setDisplayName(
             data.displayName ||
               data.fullName ||
@@ -328,6 +334,9 @@ export default function ProfilePage() {
           setStoredPhotoURL(data.profilePhotoURL || "");
         } else {
           setUsername(user.username || "");
+          setEmail(user.email || "");
+          setSavedEmail(String(user.email || "").trim().toLowerCase());
+          setEmailLocked(Boolean(String(user.email || "").trim()));
           setDisplayName(user.displayName || "");
           setPosition(user.position || getDefaultPosition(user.role));
 
@@ -417,6 +426,16 @@ export default function ProfilePage() {
       return;
     }
 
+    const normalizedEmail = email.trim().toLowerCase();
+    if (emailLocked && normalizedEmail !== savedEmail) {
+      setError("To change your saved email address, please contact your Station Manager.");
+      return;
+    }
+    if (normalizedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      setError("Enter a valid email address.");
+      return;
+    }
+
     if (!displayName.trim()) {
       setError("Display name is required.");
       return;
@@ -485,6 +504,7 @@ export default function ProfilePage() {
       const normalizedPin = pin.trim();
 
       const payload = {
+        email: normalizedEmail,
         pin: normalizedPin,
         profilePhotoURL: finalPhotoURL,
         displayName: normalizedDisplayName,
@@ -520,6 +540,8 @@ export default function ProfilePage() {
         );
       }
 
+      if (normalizedEmail) setEmailLocked(true);
+      setSavedEmail(normalizedEmail);
       setStoredPhotoURL(finalPhotoURL);
       setPhotoFile(null);
 
@@ -534,6 +556,7 @@ export default function ProfilePage() {
           prev
             ? {
                 ...prev,
+                email: normalizedEmail,
                 pin: normalizedPin,
                 profilePhotoURL: finalPhotoURL,
                 displayName: normalizedDisplayName,
@@ -964,6 +987,15 @@ export default function ProfilePage() {
               >
                 Username is managed by administration and cannot be
                 changed here.
+              </p>
+            </div>
+
+            <div>
+              <FieldLabel>Email Address</FieldLabel>
+              <TextInput type="email" value={email} onChange={(e) => setEmail(e.target.value)} readOnly={emailLocked} onClick={() => { if (emailLocked) window.alert("To change your email address, please contact your Station Manager."); }}
+                placeholder="employee@example.com" autoComplete="email" />
+              <p style={{ fontSize: 11, color: "#64748b", marginTop: 6 }}>
+                This email is shared with Manage Users. Once saved, your email can only be changed by your Station Manager.
               </p>
             </div>
 
