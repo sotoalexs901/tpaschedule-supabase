@@ -2927,43 +2927,6 @@ export default function EmployeeDashboardPage() {
         >
           <GlassCard
             title={
-              t.quickActionsTitle
-            }
-            subtitle={
-              t.quickActionsSubtitle
-            }
-            icon={"\u26A1"}
-            accent="#1769aa"
-            isMobile={isMobile}
-          >
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns:
-                  isMobile
-                    ? "1fr"
-                    : "repeat(3, minmax(0, 1fr))",
-                gap: 10,
-              }}
-            >
-              {quickCards.map(
-                (card) => (
-                  <QuickActionTile
-                    key={
-                      card.subtitle
-                    }
-                    {...card}
-                    isMobile={
-                      isMobile
-                    }
-                  />
-                )
-              )}
-            </div>
-          </GlassCard>
-
-          <GlassCard
-            title={
               t.stationManagerMessage
             }
             subtitle={
@@ -3794,57 +3757,6 @@ export default function EmployeeDashboardPage() {
         >
           <GlassCard
             title={
-              t.birthdaysToday
-            }
-            icon={"\u{1F382}"}
-            accent="#ec4899"
-            isMobile={isMobile}
-          >
-            {todayBirthdays.length ===
-            0 ? (
-              <p
-                style={{
-                  margin: 0,
-                  color:
-                    "#64748b",
-                  fontSize:
-                    12.5,
-                }}
-              >
-                {t.birthdaysEmptyToday}
-              </p>
-            ) : (
-              <div
-                style={{
-                  display:
-                    "grid",
-                  gap: 9,
-                }}
-              >
-                {todayBirthdays.map(
-                  (person) => (
-                    <BirthdayRow
-                      key={
-                        person.id
-                      }
-                      person={
-                        person
-                      }
-                      language={
-                        language
-                      }
-                      tag={
-                        t.birthdayTodayTag
-                      }
-                    />
-                  )
-                )}
-              </div>
-            )}
-          </GlassCard>
-
-          <GlassCard
-            title={
               t.birthdaysMonth
             }
             icon={"\u{1F389}"}
@@ -3903,35 +3815,24 @@ export default function EmployeeDashboardPage() {
 
           <GlassCard
             title={
-              t.wchrTopToday
+              t.birthdaysToday
             }
-            icon={"\u267F"}
-            accent="#0ea5e9"
+            icon={"\u{1F382}"}
+            accent="#ec4899"
             isMobile={isMobile}
           >
-            <p
-              style={{
-                margin:
-                  "0 0 10px",
-                fontSize: 12,
-                color:
-                  "#64748b",
-              }}
-            >
-              {t.topTodaySub}
-            </p>
-
-            {wchrLoading ? (
+            {todayBirthdays.length ===
+            0 ? (
               <p
                 style={{
                   margin: 0,
                   color:
-                    "#94a3b8",
+                    "#64748b",
                   fontSize:
-                    12,
+                    12.5,
                 }}
               >
-                {t.loadingWchr}
+                {t.birthdaysEmptyToday}
               </p>
             ) : (
               <div
@@ -3941,14 +3842,21 @@ export default function EmployeeDashboardPage() {
                   gap: 9,
                 }}
               >
-                {topToday.map(
-                  (row) => (
-                    <LeaderRow
-                      key={`${row.name}-${row.rank}`}
-                      row={
-                        row
+                {todayBirthdays.map(
+                  (person) => (
+                    <BirthdayRow
+                      key={
+                        person.id
                       }
-                      accent="#0ea5e9"
+                      person={
+                        person
+                      }
+                      language={
+                        language
+                      }
+                      tag={
+                        t.birthdayTodayTag
+                      }
                     />
                   )
                 )}
@@ -3956,60 +3864,8 @@ export default function EmployeeDashboardPage() {
             )}
           </GlassCard>
 
-          <GlassCard
-            title={
-              t.wchrTopWeek
-            }
-            icon={"\u{1F4CA}"}
-            accent="#10b981"
-            isMobile={isMobile}
-          >
-            <p
-              style={{
-                margin:
-                  "0 0 10px",
-                fontSize: 12,
-                color:
-                  "#64748b",
-              }}
-            >
-              {t.topWeekSub}
-            </p>
 
-            {wchrLoading ? (
-              <p
-                style={{
-                  margin: 0,
-                  color:
-                    "#94a3b8",
-                  fontSize:
-                    12,
-                }}
-              >
-                {t.loadingWchr}
-              </p>
-            ) : (
-              <div
-                style={{
-                  display:
-                    "grid",
-                  gap: 9,
-                }}
-              >
-                {topWeek.map(
-                  (row) => (
-                    <LeaderRow
-                      key={`${row.name}-${row.rank}`}
-                      row={
-                        row
-                      }
-                      accent="#10b981"
-                    />
-                  )
-                )}
-              </div>
-            )}
-          </GlassCard>
+
         </div>
       </div>
 
