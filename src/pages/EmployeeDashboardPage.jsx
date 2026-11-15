@@ -21,6 +21,7 @@ import {
 } from "../config/appConfig.js";
 import { triggerDashboardEventRsvpPush } from "../utils/dashboardEventPush.js";
 import LiveFlightsPanel from "../components/LiveFlightsPanel.jsx";
+import WeeklyDepartmentSchedulesGallery from "../components/WeeklyDepartmentSchedulesGallery.jsx";
 import AirportWeatherPanel from "../components/AirportWeatherPanel.jsx";
 
 function getDefaultPosition(role) {
@@ -3170,6 +3171,8 @@ export default function EmployeeDashboardPage() {
           </div>
         </div>}
       </section>
+
+      <WeeklyDepartmentSchedulesGallery />
 
       <div style={{ marginBottom: 16 }}>
         <LiveFlightsPanel compact={isMobile} maxItems={4} />
