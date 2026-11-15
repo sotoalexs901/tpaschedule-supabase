@@ -718,16 +718,8 @@ export default function EditUsersPage() {
       );
 
       const normalizedEmail = normalizeLower(userRecord.email);
-      if (user?.role !== "station_manager") {
-        setStatus("Only the Station Manager can update employee email addresses.");
-        return;
-      }
       if (normalizedEmail !== normalizeLower(userRecord.__originalEmail)) {
         setStatus("Email changes must use Send Invitation. The current email stays active until the employee completes activation.");
-        return;
-      }
-      if (userRecord.authUid && normalizedEmail !== normalizeLower(userRecord.__originalEmail)) {
-        setStatus("This user has Firebase sign-in enabled. Their authentication email must be updated securely before changing this record.");
         return;
       }
       if (normalizedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
@@ -735,7 +727,7 @@ export default function EditUsersPage() {
         return;
       }
       const payload = {
-        email: normalizedEmail,
+        email: normalizeLower(userRecord.__originalEmail),
         username: normalizeText(userRecord.username),
         pin: normalizeText(userRecord.pin),
         role: userRecord.role || "agent",
