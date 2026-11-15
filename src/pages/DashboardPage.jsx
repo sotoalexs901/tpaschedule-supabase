@@ -564,6 +564,7 @@ export default function DashboardPage() {
   const [showBlockedList, setShowBlockedList] = useState(false);
   const [pendingSchedules, setPendingSchedules] = useState([]);
   const [publishedSchedules, setPublishedSchedules] = useState([]);
+  const [scheduleEmployees, setScheduleEmployees] = useState([]);
   const [scheduleSlides, setScheduleSlides] = useState({});
   const [expandedSchedule, setExpandedSchedule] = useState(null);
   const [photos, setPhotos] = useState([]);
@@ -873,10 +874,12 @@ export default function DashboardPage() {
 
   const fetchPublishedSchedules = async () => {
     try {
-      const [approved, notifications] = await Promise.all([
+      const [approved, notifications, employeesSnap] = await Promise.all([
         getDocs(query(collection(db, "schedules"), where("status", "==", "approved"))),
         getDocs(collection(db, "schedule_notification_batches")),
+        getDocs(collection(db, "employees")),
       ]);
+      setScheduleEmployees(employeesSnap.docs.map(d => ({ id: d.id, ...d.data() })));
       const releases = notifications.docs.map(d => d.data()).filter(b =>
         b.type === "approved_schedule" &&
         ["SENT", "SKIPPED_ALREADY_SENT", "NO_DELIVERY"].includes(b.status) &&
@@ -2162,19 +2165,22 @@ export default function DashboardPage() {
               const imageUrl = latest.imageUrl || latest.imageURL || latest.photoURL || latest.scheduleImageUrl || "";
               const next = () => setScheduleSlides(prev => ({ ...prev, all: (index + 1) % departments.length }));
               return (
-                <div style={{ maxWidth: 470, margin: "0 auto" }}>
+                <div style={{ maxWidth: 610, margin: "0 auto" }}>
                   <button type="button" onClick={next} aria-label="View next department schedule" style={{ display: "block", width: "100%", padding: 0, background: "#f8fafc", border: "1px solid #dbeafe", borderRadius: 12, overflow: "hidden", cursor: "pointer", color: "#0f172a" }}>
                     {imageUrl ? (
-                      <img src={imageUrl} alt={department + " approved weekly schedule"} style={{ width: "100%", maxHeight: 220, objectFit: "contain", display: "block" }} />
+                      <img src={imageUrl} alt={department + " approved weekly schedule"} style={{ width: "100%", maxHeight: 320, objectFit: "contain", display: "block" }} />
                     ) : Array.isArray(latest.grid) && latest.grid.length ? (
                       <div style={{ padding: 8, textAlign: "left" }}>
                         <div style={{ fontWeight: 800, fontSize: 12, padding: "4px 2px 8px" }}>{department} · {latest.weekStart || latest.weekTag || "Weekly roster"}</div>
                         <div style={{ overflow: "hidden", borderRadius: 6, border: "1px solid #dbeafe" }}>
-                          <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed", fontSize: 8 }}>
+                          <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed", fontSize: 10 }}>
                             <thead><tr style={{ background: "#dbeafe" }}><th style={{ padding: 4, textAlign: "left", width: "26%" }}>EMP</th>{["MON","TUE","WED","THU","FRI","SAT","SUN"].map(day => <th key={day} style={{ padding: 3 }}>{day}</th>)}</tr></thead>
-                            <tbody>{latest.grid.slice(0, 6).map((row, ri) => (
+                            <tbody>{latest.grid.slice(0, 9).map((row, ri) => (
                               <tr key={row.employeeId || ri} style={{ background: ri % 2 ? "#f8fafc" : "#fff" }}>
-                                <td style={{ padding: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 700 }}>{row.name || row.employeeName || row.fullName || row.employeeId || "Employee"}</td>
+                                <td style={{ padding: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 700 }}>{(() => {
+                                  const employee = scheduleEmployees.find(e => String(e.id) === String(row.employeeId) || String(e.employeeId || "") === String(row.employeeId));
+                                  return employee?.name || employee?.fullName || employee?.employeeName || row.name || row.employeeName || row.fullName || "Employee";
+                                })()}</td>
                                 {["mon","tue","wed","thu","fri","sat","sun"].map(day => {
                                   const shifts = Array.isArray(row[day]) ? row[day] : [];
                                   const label = shifts.filter(s => s?.start && s.start !== "OFF").map(s => s.start).join(", ") || "OFF";
@@ -2184,7 +2190,7 @@ export default function DashboardPage() {
                             ))}</tbody>
                           </table>
                         </div>
-                        {latest.grid.length > 6 && <div style={{ fontSize: 10, color: "#64748b", marginTop: 5 }}>+{latest.grid.length - 6} more employees · Open full schedule to see all</div>}
+                        {latest.grid.length > 9 && <div style={{ fontSize: 10, color: "#64748b", marginTop: 5 }}>+{latest.grid.length - 9} more employees · Open full schedule to see all</div>}
                       </div>
                     ) : (
                       <div style={{ minHeight: 100, display: "flex", alignItems: "center", justifyContent: "center", gap: 12, padding: 12 }}>
