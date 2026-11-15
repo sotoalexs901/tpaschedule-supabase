@@ -1329,18 +1329,18 @@ export default function DashboardPage() {
                       <div style={{ padding: 8, textAlign: "left" }}>
                         <div style={{ fontWeight: 800, fontSize: 14, color: accent, padding: "4px 2px 8px" }}>{department} · {latest.weekStart || latest.weekTag || "Weekly roster"}</div>
                         <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch", borderRadius: 6, border: "1px solid " + accent, maxWidth: "100%" }}>
-                          <table style={{ width: "100%", minWidth: isMobile ? 860 : 920, borderCollapse: "collapse", tableLayout: "fixed", fontSize: 13 }}>
-                            <thead><tr style={{ background: accent, color: "#fff" }}><th style={{ padding: 6, textAlign: "left", width: "26%" }}>EMP</th>{["MON","TUE","WED","THU","FRI","SAT","SUN"].map(day => <th key={day} style={{ padding: 6 }}>{day}</th>)}</tr></thead>
+                          <table style={{ width: "100%", minWidth: isMobile ? 760 : 790, borderCollapse: "collapse", tableLayout: "fixed", fontSize: 12 }}>
+                            <thead><tr style={{ background: accent, color: "#fff" }}><th style={{ padding: 6, textAlign: "left", width: "19%" }}>EMP</th>{["MON","TUE","WED","THU","FRI","SAT","SUN"].map(day => <th key={day} style={{ padding: 6 }}>{day}</th>)}</tr></thead>
                             <tbody>{latest.grid.slice(0, 16).map((row, ri) => (
                               <tr key={row.employeeId || ri} style={{ background: ri % 2 ? rowTint : "#fff" }}>
-                                <td style={{ padding: 6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 700, background: tint }}>{(() => {
+                                <td style={{ padding: "6px 4px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 700, background: tint }}>{(() => {
                                   const employee = scheduleEmployees.find(e => String(e.id) === String(row.employeeId) || String(e.employeeId || "") === String(row.employeeId));
                                   return employee?.name || employee?.fullName || employee?.employeeName || row.name || row.employeeName || row.fullName || "Employee";
                                 })()}</td>
                                 {["mon","tue","wed","thu","fri","sat","sun"].map(day => {
                                   const shifts = Array.isArray(row[day]) ? row[day] : [];
                                   const label = shifts.filter(s => s?.start && s.start !== "OFF").map(s => s.end ? `${s.start}–${s.end}` : s.start).join(", ") || "OFF";
-                                  return <td key={day} style={{ textAlign: "center", padding: 5, borderLeft: "1px solid " + tint, background: label === "OFF" ? "#f8fafc" : rowTint, whiteSpace: "nowrap", color: "#1f2937" }}>{label}</td>;
+                                  return <td key={day} style={{ textAlign: "center", padding: "5px 2px", borderLeft: "1px solid " + tint, background: label === "OFF" ? "#f8fafc" : rowTint, whiteSpace: "nowrap", color: "#1f2937" }}>{label}</td>;
                                 })}
                               </tr>
                             ))}</tbody>
