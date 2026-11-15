@@ -21,6 +21,7 @@ import {
 } from "../config/appConfig.js";
 import { triggerDashboardEventRsvpPush } from "../utils/dashboardEventPush.js";
 import LiveFlightsPanel from "../components/LiveFlightsPanel.jsx";
+import SeasonalCelebrationBanner from "../components/SeasonalCelebrationBanner.jsx";
 import WeeklyDepartmentSchedulesGallery from "../components/WeeklyDepartmentSchedulesGallery.jsx";
 import AirportWeatherPanel from "../components/AirportWeatherPanel.jsx";
 
@@ -2853,18 +2854,20 @@ export default function EmployeeDashboardPage() {
           "Poppins, Inter, system-ui, sans-serif",
       }}
     >
+      <SeasonalCelebrationBanner />
+
       <section
         style={{
           background:
             "linear-gradient(135deg, #071c33 0%, #0f4c81 42%, #1769aa 72%, #62c4ef 100%)",
           borderRadius:
             isMobile
-              ? 22
-              : 30,
+              ? 16
+              : 20,
           padding:
             isMobile
-              ? 14
-              : 25,
+              ? 12
+              : 17,
           color: "#fff",
           boxShadow:
             "0 24px 60px rgba(23,105,170,0.22)",
@@ -3002,7 +3005,7 @@ export default function EmployeeDashboardPage() {
               <h1
                 style={{
                   margin:
-                    "7px 0 5px",
+                    "4px 0 4px",
                   fontSize:
                     isMobile
                       ? 20
@@ -3172,11 +3175,11 @@ export default function EmployeeDashboardPage() {
         </div>}
       </section>
 
-      <WeeklyDepartmentSchedulesGallery />
-
       <div style={{ marginBottom: 16 }}>
-        <LiveFlightsPanel compact={isMobile} maxItems={4} />
+        <LiveFlightsPanel compact={isMobile} maxItems={6} />
       </div>
+
+      <WeeklyDepartmentSchedulesGallery />
 
       <div style={{ marginBottom: isMobile ? 10 : 16 }}>
         <AirportWeatherPanel compact={isMobile} maxItems={8} />
