@@ -14,7 +14,7 @@ function init() {
   }) });
 }
 const clean = v => String(v ?? "").trim();
-const role = v => clean(v).toLowerCase().replace(/[\\s-]+/g, "_");
+const role = v => clean(v).toLowerCase().replace(/[\s-]+/g, "_");
 const displayName = u => clean(u.fullName || u.name || u.displayName || u.username || u.email || "Unknown employee");
 function easternDate() {
   const parts = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hourCycle: "h23" }).formatToParts(new Date());
