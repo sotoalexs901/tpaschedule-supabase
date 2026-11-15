@@ -478,7 +478,6 @@ export default function LiveFlightsPanel({ compact = false, maxItems = 6 }) {
       .slice(0, maxItems);
   }, [flights, user, maxItems, todayKey]);
 
-  if (!visibleFlights.length && !error) return null;
 
   return (
     <section
@@ -503,6 +502,8 @@ export default function LiveFlightsPanel({ compact = false, maxItems = 6 }) {
 
       {error ? (
         <div style={{ color: "#b91c1c", fontSize: 12 }}>{error}</div>
+      ) : !visibleFlights.length ? (
+        <div style={{ color: "#64748b", fontSize: 13, padding: "10px 2px" }}>No monitored flights available for your department today.</div>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: compact ? "1fr" : "repeat(auto-fit,minmax(250px,1fr))", gap: 10 }}>
           {visibleFlights.map((flight) => (
