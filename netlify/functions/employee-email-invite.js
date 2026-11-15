@@ -83,15 +83,15 @@ exports.handler = async event => {
       if (!userSnap.exists || userSnap.data().status === "inactive") return reply(403, { error: "Employee unavailable" });
       const employee = userSnap.data();
       if (employee.authUid) {
-        await admin.auth().updateUser(employee.authUid, { email: invite.email, password, emailVerified: true });
+        await admin.auth().updateUser(employee.authUid, { email: invite.email, password, emailVerified: false });
         await admin.auth().revokeRefreshTokens(employee.authUid);
       } else {
-        const account = await admin.auth().createUser({ email: invite.email, password, emailVerified: true, disabled: false });
+        const account = await admin.auth().createUser({ email: invite.email, password, emailVerified: false, disabled: false });
         await userRef.update({ authUid: account.uid });
       }
       await userRef.update({ email: invite.email, emailActivatedAt: admin.firestore.FieldValue.serverTimestamp() });
       await invitationRef.update({ status: "activated", activatedAt: admin.firestore.FieldValue.serverTimestamp(), tokenHash: admin.firestore.FieldValue.delete() });
-      return reply(200, { status: "activated" });
+      return reply(200, { status: "activated", verificationRequired: true });
     }
     return reply(400, { error: "Unsupported action" });
   } catch (err) {
