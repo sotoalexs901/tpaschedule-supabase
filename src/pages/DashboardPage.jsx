@@ -20,6 +20,28 @@ import AirportWeatherPanel from "../components/AirportWeatherPanel.jsx";
 import SeasonalCelebrationBanner from "../components/SeasonalCelebrationBanner.jsx";
 
 const FIXED_AUTHOR = "AeroStation Hub";
+const SCHEDULE_AIRLINE_COLORS = {
+  SY: "#F28C28", WL: "#3A7BD5", "WL Invicta": "#0057B8",
+  AV: "#D22630", EA: "#003E7E", WCHR: "#7D39C7",
+  CABIN: "#1FA86A", "AA-BSO": "#A8A8A8", OTHER: "#555555",
+  WestJet: "#22B8B0",
+};
+function scheduleAccent(airline, department) {
+  const name = String(airline || department || "").trim();
+  const upper = name.toUpperCase();
+  if (upper === "CABIN SERVICE" || upper === "DL CABIN SERVICE" || upper === "DL CABIN") return SCHEDULE_AIRLINE_COLORS.CABIN;
+  if (upper === "AA BSO" || upper === "BSO") return SCHEDULE_AIRLINE_COLORS["AA-BSO"];
+  if (upper === "WAL HAVANA AIR" || upper === "WAL" || upper === "WAL HAVANA" || upper === "WL HAVANA AIR" || upper === "WESTJET") return SCHEDULE_AIRLINE_COLORS.WestJet;
+  if (SCHEDULE_AIRLINE_COLORS[name]) return SCHEDULE_AIRLINE_COLORS[name];
+  if (/^WL\\b/i.test(name)) return SCHEDULE_AIRLINE_COLORS.WL;
+  return "#6b7280";
+}
+function scheduleTint(hex, amount = 0.88) {
+  const rgb = hex.replace("#", "");
+  const values = [0, 2, 4].map(i => parseInt(rgb.slice(i, i + 2), 16));
+  return "rgb(" + values.map(v => Math.round(v + (255 - v) * amount)).join(",") + ")";
+}
+
 
 function getMillis(value) {
   if (!value) return 0;
@@ -1280,6 +1302,9 @@ export default function DashboardPage() {
               const index = (scheduleSlides.all || 0) % departments.length;
               const [department, schedules] = departments[index];
               const latest = schedules[0];
+              const accent = scheduleAccent(latest.airline, department);
+              const tint = scheduleTint(accent, 0.78);
+              const rowTint = scheduleTint(accent, 0.92);
               const imageUrl = latest.imageUrl || latest.imageURL || latest.photoURL || latest.scheduleImageUrl || "";
               const next = () => setScheduleSlides(prev => ({ ...prev, all: (index + 1) % departments.length }));
               return (
@@ -1289,20 +1314,20 @@ export default function DashboardPage() {
                       <img src={imageUrl} alt={department + " approved weekly schedule"} style={{ width: "100%", maxHeight: 540, objectFit: "contain", display: "block" }} />
                     ) : Array.isArray(latest.grid) && latest.grid.length ? (
                       <div style={{ padding: 8, textAlign: "left" }}>
-                        <div style={{ fontWeight: 800, fontSize: 12, padding: "4px 2px 8px" }}>{department} · {latest.weekStart || latest.weekTag || "Weekly roster"}</div>
-                        <div style={{ overflow: "hidden", borderRadius: 6, border: "1px solid #dbeafe" }}>
-                          <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed", fontSize: 13 }}>
-                            <thead><tr style={{ background: "#dbeafe" }}><th style={{ padding: 4, textAlign: "left", width: "26%" }}>EMP</th>{["MON","TUE","WED","THU","FRI","SAT","SUN"].map(day => <th key={day} style={{ padding: 3 }}>{day}</th>)}</tr></thead>
+                        <div style={{ fontWeight: 800, fontSize: 14, color: accent, padding: "4px 2px 8px" }}>{department} · {latest.weekStart || latest.weekTag || "Weekly roster"}</div>
+                        <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch", borderRadius: 6, border: "1px solid " + accent, maxWidth: "100%" }}>
+                          <table style={{ width: "100%", minWidth: isMobile ? 860 : 920, borderCollapse: "collapse", tableLayout: "fixed", fontSize: 13 }}>
+                            <thead><tr style={{ background: accent, color: "#fff" }}><th style={{ padding: 6, textAlign: "left", width: "26%" }}>EMP</th>{["MON","TUE","WED","THU","FRI","SAT","SUN"].map(day => <th key={day} style={{ padding: 6 }}>{day}</th>)}</tr></thead>
                             <tbody>{latest.grid.slice(0, 16).map((row, ri) => (
-                              <tr key={row.employeeId || ri} style={{ background: ri % 2 ? "#f8fafc" : "#fff" }}>
-                                <td style={{ padding: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 700 }}>{(() => {
+                              <tr key={row.employeeId || ri} style={{ background: ri % 2 ? rowTint : "#fff" }}>
+                                <td style={{ padding: 6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 700, background: tint }}>{(() => {
                                   const employee = scheduleEmployees.find(e => String(e.id) === String(row.employeeId) || String(e.employeeId || "") === String(row.employeeId));
                                   return employee?.name || employee?.fullName || employee?.employeeName || row.name || row.employeeName || row.fullName || "Employee";
                                 })()}</td>
                                 {["mon","tue","wed","thu","fri","sat","sun"].map(day => {
                                   const shifts = Array.isArray(row[day]) ? row[day] : [];
                                   const label = shifts.filter(s => s?.start && s.start !== "OFF").map(s => s.end ? `${s.start}–${s.end}` : s.start).join(", ") || "OFF";
-                                  return <td key={day} style={{ textAlign: "center", padding: 3, borderLeft: "1px solid #e2e8f0", overflow: "hidden", textOverflow: "clip" }}>{label}</td>;
+                                  return <td key={day} style={{ textAlign: "center", padding: 5, borderLeft: "1px solid " + tint, background: label === "OFF" ? "#f8fafc" : rowTint, whiteSpace: "nowrap", color: "#1f2937" }}>{label}</td>;
                                 })}
                               </tr>
                             ))}</tbody>
