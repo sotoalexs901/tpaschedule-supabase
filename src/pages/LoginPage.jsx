@@ -112,6 +112,10 @@ export default function LoginPage() {
   const [emailPilotMode, setEmailPilotMode] = useState(false);
   const [emailHelp, setEmailHelp] = useState("");
   const pilotEnabled = import.meta.env.VITE_EMAIL_LOGIN_ENABLED === "true";
+  const migrationStart = import.meta.env.VITE_EMAIL_MIGRATION_START || "";
+  const migrationDate = migrationStart ? new Date(migrationStart + "T00:00:00Z") : null;
+  const migrationEnd = migrationDate && !Number.isNaN(migrationDate.getTime()) ? new Date(migrationDate.getTime() + 10 * 86400000) : null;
+  const migrationActive = Boolean(migrationEnd && Date.now() < migrationEnd.getTime());
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -180,6 +184,10 @@ export default function LoginPage() {
       .toLowerCase();
 
     const cleanPin = pin.trim();
+    if (migrationEnd && Date.now() >= migrationEnd.getTime()) {
+      setError("The 10-day PIN transition has ended. Please sign in using your email and password or contact your Station Manager.");
+      return;
+    }
 
     if (!cleanUsername || !cleanPin) {
       setError("Please enter your username and PIN.");
@@ -466,6 +474,9 @@ export default function LoginPage() {
               management platform.
             </p>
 
+            {migrationActive && <div role="status" style={{ padding: 12, marginBottom: 12, background: "#eaf4ff", borderRadius: 10, color: "#17365d", fontSize: 13 }}>
+              <strong>Important - Email login transition:</strong> Username and PIN will remain available for 10 days, through {migrationEnd.toLocaleDateString("en-US", { timeZone: "UTC", month: "long", day: "numeric", year: "numeric" })}. Please add your email address in My Profile and contact your Station Manager to receive your password setup invitation.
+            </div>}
             {error && !showPrivacyModal && (
               <div className="login-error">
                 {error}
