@@ -896,22 +896,40 @@ export default function DashboardPage() {
 
   const fetchPublishedSchedules = async () => {
     try {
-      const [approved, notifications, employeesSnap] = await Promise.all([
+      const [approved, employeesSnap] = await Promise.all([
         getDocs(query(collection(db, "schedules"), where("status", "==", "approved"))),
-        getDocs(collection(db, "schedule_notification_batches")),
         getDocs(collection(db, "employees")),
       ]);
       setScheduleEmployees(employeesSnap.docs.map(d => ({ id: d.id, ...d.data() })));
-      const releases = notifications.docs.map(d => d.data()).filter(b =>
-        b.type === "approved_schedule" &&
-        ["SENT", "SKIPPED_ALREADY_SENT", "NO_DELIVERY"].includes(b.status) &&
-        Array.isArray(b.scheduleIds) && b.scheduleIds.length
-      );
-      const releasedIds = new Set(releases.flatMap(b => b.scheduleIds.map(String)));
-      setPublishedSchedules(approved.docs
-        .filter(d => releasedIds.has(d.id))
-        .map(d => ({ id: d.id, ...d.data() }))
-        .sort((a, b) => String(b.weekStart || b.weekTag || "").localeCompare(String(a.weekStart || a.weekTag || ""))));
+      const getWeek = s => String(s.weekStart || s.weekTag || s.startDate || s.days?.mon || "").trim();
+      const getRevisionTime = s => {
+        const value = s.updatedAt || s.approvedAt || s.createdAt;
+        if (typeof value?.toMillis === "function") return value.toMillis();
+        if (typeof value?.seconds === "number") return value.seconds * 1000;
+        const parsed = Date.parse(value || "");
+        return Number.isFinite(parsed) ? parsed : 0;
+      };
+      // Keep the newest approved revision for each airline, department and week.
+      // Distinct weeks and distinct airline schedules remain independently visible.
+      const newest = new Map();
+      approved.docs.forEach(d => {
+        const schedule = { id: d.id, ...d.data() };
+        const key = [
+          String(schedule.airline || schedule.airlineCode || "").trim().toLowerCase(),
+          String(schedule.department || "").trim().toLowerCase(),
+          getWeek(schedule) || d.id,
+        ].join("|");
+        const existing = newest.get(key);
+        if (!existing || getRevisionTime(schedule) > getRevisionTime(existing) ||
+          (getRevisionTime(schedule) === getRevisionTime(existing) && schedule.id > existing.id)) {
+          newest.set(key, schedule);
+        }
+      });
+      setPublishedSchedules([...newest.values()].sort((a, b) =>
+        getWeek(b).localeCompare(getWeek(a)) ||
+        String(a.department || a.airline || "").localeCompare(String(b.department || b.airline || "")) ||
+        String(a.airline || "").localeCompare(String(b.airline || ""))
+      ));
     } catch (error) {
       console.error("Could not load published department schedules", error);
       setPublishedSchedules([]);
@@ -1292,21 +1310,16 @@ export default function DashboardPage() {
             action={<button type="button" onClick={fetchPublishedSchedules} style={{ border: "1px solid #cbd5e1", borderRadius: 8, background: "white", padding: "6px 10px", cursor: "pointer" }}>Refresh</button>}
           >
             {publishedSchedules.length === 0 ? (
-              <p style={{ color: "#64748b", margin: 0 }}>No released schedules available.</p>
+              <p style={{ color: "#64748b", margin: 0 }}>No approved schedules available.</p>
             ) : (() => {
-              const departments = Object.entries(publishedSchedules.reduce((groups, schedule) => {
-                const department = String(schedule.department || schedule.airline || "Other Department").trim();
-                (groups[department] ||= []).push(schedule);
-                return groups;
-              }, {}));
-              const index = (scheduleSlides.all || 0) % departments.length;
-              const [department, schedules] = departments[index];
-              const latest = schedules[0];
+              const index = (scheduleSlides.all || 0) % publishedSchedules.length;
+              const latest = publishedSchedules[index];
+              const department = String(latest.department || latest.airline || "Other Department").trim();
               const accent = scheduleAccent(latest.airline, department);
               const tint = scheduleTint(accent, 0.78);
               const rowTint = scheduleTint(accent, 0.92);
               const imageUrl = latest.imageUrl || latest.imageURL || latest.photoURL || latest.scheduleImageUrl || "";
-              const next = () => setScheduleSlides(prev => ({ ...prev, all: (index + 1) % departments.length }));
+              const next = () => setScheduleSlides(prev => ({ ...prev, all: (index + 1) % publishedSchedules.length }));
               return (
                 <div style={{ width: "100%", maxWidth: "100%", margin: "0 auto" }}>
                   <button type="button" onClick={next} aria-label="View next department schedule" style={{ display: "block", width: "100%", padding: 0, background: "#f8fafc", border: "1px solid #dbeafe", borderRadius: 12, overflow: "hidden", cursor: "pointer", color: "#0f172a" }}>
@@ -1316,18 +1329,18 @@ export default function DashboardPage() {
                       <div style={{ padding: 8, textAlign: "left" }}>
                         <div style={{ fontWeight: 800, fontSize: 14, color: accent, padding: "4px 2px 8px" }}>{department} · {latest.weekStart || latest.weekTag || "Weekly roster"}</div>
                         <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch", borderRadius: 6, border: "1px solid " + accent, maxWidth: "100%" }}>
-                          <table style={{ width: "100%", minWidth: isMobile ? 860 : 920, borderCollapse: "collapse", tableLayout: "fixed", fontSize: 13 }}>
-                            <thead><tr style={{ background: accent, color: "#fff" }}><th style={{ padding: 6, textAlign: "left", width: "26%" }}>EMP</th>{["MON","TUE","WED","THU","FRI","SAT","SUN"].map(day => <th key={day} style={{ padding: 6 }}>{day}</th>)}</tr></thead>
+                          <table style={{ width: "100%", minWidth: isMobile ? 760 : 790, borderCollapse: "collapse", tableLayout: "fixed", fontSize: 12 }}>
+                            <thead><tr style={{ background: accent, color: "#fff" }}><th style={{ padding: 6, textAlign: "left", width: "19%" }}>EMP</th>{["MON","TUE","WED","THU","FRI","SAT","SUN"].map(day => <th key={day} style={{ padding: 6 }}>{day}</th>)}</tr></thead>
                             <tbody>{latest.grid.slice(0, 16).map((row, ri) => (
                               <tr key={row.employeeId || ri} style={{ background: ri % 2 ? rowTint : "#fff" }}>
-                                <td style={{ padding: 6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 700, background: tint }}>{(() => {
+                                <td style={{ padding: "6px 4px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 700, background: tint }}>{(() => {
                                   const employee = scheduleEmployees.find(e => String(e.id) === String(row.employeeId) || String(e.employeeId || "") === String(row.employeeId));
                                   return employee?.name || employee?.fullName || employee?.employeeName || row.name || row.employeeName || row.fullName || "Employee";
                                 })()}</td>
                                 {["mon","tue","wed","thu","fri","sat","sun"].map(day => {
                                   const shifts = Array.isArray(row[day]) ? row[day] : [];
                                   const label = shifts.filter(s => s?.start && s.start !== "OFF").map(s => s.end ? `${s.start}–${s.end}` : s.start).join(", ") || "OFF";
-                                  return <td key={day} style={{ textAlign: "center", padding: 5, borderLeft: "1px solid " + tint, background: label === "OFF" ? "#f8fafc" : rowTint, whiteSpace: "nowrap", color: "#1f2937" }}>{label}</td>;
+                                  return <td key={day} style={{ textAlign: "center", padding: "5px 2px", borderLeft: "1px solid " + tint, background: label === "OFF" ? "#f8fafc" : rowTint, whiteSpace: "nowrap", color: "#1f2937" }}>{label}</td>;
                                 })}
                               </tr>
                             ))}</tbody>
@@ -1343,8 +1356,8 @@ export default function DashboardPage() {
                     )}
                   </button>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginTop: 8, fontSize: 12 }}>
-                    <button type="button" onClick={() => setScheduleSlides(prev => ({ ...prev, all: (index - 1 + departments.length) % departments.length }))} style={{ border: 0, background: "transparent", cursor: "pointer", color: "#1769aa" }}>← Previous</button>
-                    <span style={{ fontWeight: 750 }}>{department} · {index + 1} / {departments.length}</span>
+                    <button type="button" onClick={() => setScheduleSlides(prev => ({ ...prev, all: (index - 1 + publishedSchedules.length) % publishedSchedules.length }))} style={{ border: 0, background: "transparent", cursor: "pointer", color: "#1769aa" }}>← Previous</button>
+                    <span style={{ fontWeight: 750 }}>{department} · {index + 1} / {publishedSchedules.length}</span>
                     <button type="button" onClick={next} style={{ border: 0, background: "transparent", cursor: "pointer", color: "#1769aa" }}>Next →</button>
                   </div>
                   <div style={{ textAlign: "center", marginTop: 6 }}><button type="button" onClick={() => navigate(`/approved/${latest.id}`)} style={{ border: 0, background: "transparent", cursor: "pointer", color: "#1769aa", fontSize: 12 }}>Open full schedule</button></div>
