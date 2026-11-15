@@ -422,6 +422,8 @@ function MobileUserCard({
   onReset,
   onDelete,
   onApplySuggestion,
+  onSendInvitation,
+  canInvite,
 }) {
   const match = getEmployeeMatch(userRecord, employees);
   const selectedEmployee =
@@ -470,8 +472,8 @@ function MobileUserCard({
             onChange={(e) => onChange(userRecord.id, "email", e.target.value)} />
         </div>
 
-        {user?.role === "station_manager" && <ActionButton variant="soft" disabled={savingId === userRecord.id}
-          onClick={() => sendEmailInvitation(userRecord)}>Send Email Invitation</ActionButton>}
+        {canInvite && <ActionButton variant="soft" disabled={savingId === userRecord.id}
+          onClick={() => onSendInvitation(userRecord)}>Send Email Invitation</ActionButton>}
         <div>
           <div style={mobileLabelStyle}>Username</div>
           <TextInput
@@ -683,7 +685,7 @@ export default function EditUsersPage() {
       return;
     }
     const email = normalizeLower(record.email);
-    if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       setStatus("Enter a valid employee email first.");
       return;
     }
@@ -1126,6 +1128,8 @@ export default function EditUsersPage() {
               onReset={resetPin}
               onDelete={deleteUser}
               onApplySuggestion={applySuggestion}
+              onSendInvitation={sendEmailInvitation}
+              canInvite={user?.role === "station_manager"}
             />
           ))}
 
