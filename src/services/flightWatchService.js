@@ -145,19 +145,27 @@ export function normalizeDepartment(value) {
     .trim();
 }
 
+function departmentAliases(value) {
+  const text = normalizeDepartment(value);
+  const aliases = new Set();
+  if (!text) return aliases;
+  aliases.add(text);
+  if (/\bwchr\b|wheelchair/.test(text)) aliases.add("wchr");
+  if (/avianca|\bav\b/.test(text)) { aliases.add("av"); aliases.add("av ticket counter"); }
+  if (/sun country|\bsy\b/.test(text)) { aliases.add("sy"); aliases.add("sy ticket counter"); }
+  if (/world atlantic|\bwl\b/.test(text)) { aliases.add("wl"); aliases.add("world atlantic"); }
+  if (/aa bso|\bbso\b|american airlines bso/.test(text)) aliases.add("aa bso");
+  if (/dl cabin|delta cabin|cabin service/.test(text)) aliases.add("dl cabin service");
+  return aliases;
+}
+
 export function flightVisibleToUser(flight, user) {
-  const targets = Array.isArray(flight?.targetDepartments)
-    ? flight.targetDepartments
-    : [];
-
-  if (!targets.length || targets.some((item) => upper(item) === "ALL")) return true;
+  const targets = Array.isArray(flight?.targetDepartments) ? flight.targetDepartments : [];
+  if (!targets.length || targets.some(item => upper(item) === "ALL")) return true;
   if (["station_manager", "duty_manager"].includes(user?.role)) return true;
-
-  const userDepartment = normalizeDepartment(user?.department);
-  if (!userDepartment) return false;
-
-  return targets.some((target) => {
-    const normalized = normalizeDepartment(target);
-    return normalized === userDepartment || normalized.includes(userDepartment) || userDepartment.includes(normalized);
-  });
+  const aliases = new Set();
+  [user?.department, user?.departmentName, user?.airline, user?.airlineAccount, user?.account, user?.position]
+    .forEach(value => departmentAliases(value).forEach(alias => aliases.add(alias)));
+  if (!aliases.size) return false;
+  return targets.some(target => [...departmentAliases(target)].some(alias => aliases.has(alias)));
 }

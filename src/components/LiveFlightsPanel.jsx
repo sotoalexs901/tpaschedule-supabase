@@ -1,9 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useUser } from "../UserContext.jsx";
-import {
-  flightVisibleToUser,
-  subscribeFlightWatchlist,
-} from "../services/flightWatchService.js";
+import { subscribeFlightWatchlist } from "../services/flightWatchService.js";
 
 function clean(value) {
   return String(value ?? "").trim();
@@ -455,7 +451,6 @@ function FlightCard({ flight, compact }) {
 }
 
 export default function LiveFlightsPanel({ compact = false, maxItems = 6 }) {
-  const { user } = useUser();
   const [flights, setFlights] = useState([]);
   const [error, setError] = useState("");
   const todayKey = tampaDateKey();
@@ -473,12 +468,10 @@ export default function LiveFlightsPanel({ compact = false, maxItems = 6 }) {
   const visibleFlights = useMemo(() => {
     return flights
       .filter((item) => item.enabled !== false)
-      .filter((item) => flightVisibleToUser(item, user))
       .filter((item) => clean(item.flightDate) === todayKey)
       .slice(0, maxItems);
-  }, [flights, user, maxItems, todayKey]);
+  }, [flights, maxItems, todayKey]);
 
-  if (!visibleFlights.length && !error) return null;
 
   return (
     <section
@@ -503,6 +496,8 @@ export default function LiveFlightsPanel({ compact = false, maxItems = 6 }) {
 
       {error ? (
         <div style={{ color: "#b91c1c", fontSize: 12 }}>{error}</div>
+      ) : !visibleFlights.length ? (
+        <div style={{ color: "#64748b", fontSize: 13, padding: "10px 2px" }}>No monitored flights available today.</div>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: compact ? "1fr" : "repeat(auto-fit,minmax(250px,1fr))", gap: 10 }}>
           {visibleFlights.map((flight) => (
