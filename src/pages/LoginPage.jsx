@@ -12,7 +12,7 @@ import {
   where,
 } from "firebase/firestore";
 import { auth, db } from "../firebase";
-import { sendPasswordResetEmail, signInWithEmailAndPassword, signOut } from "firebase/auth";
+import { sendEmailVerification, sendPasswordResetEmail, signInWithEmailAndPassword, signOut } from "firebase/auth";
 import { useUser } from "../UserContext.jsx";
 import {
   APP_NAME,
@@ -138,6 +138,12 @@ export default function LoginPage() {
     try {
       setLoading(true);
       const credential = await signInWithEmailAndPassword(auth, username.trim().toLowerCase(), emailPassword);
+      if (!credential.user.emailVerified) {
+        await sendEmailVerification(credential.user);
+        await signOut(auth);
+        setEmailHelp("A verification email has been sent. Open the link in your inbox, then sign in again. Your PIN login remains available.");
+        return;
+      }
       const token = await credential.user.getIdToken();
       const response = await fetch("/.netlify/functions/employee-auth-profile", {
         headers: { Authorization: `Bearer ${token}` },
